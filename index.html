@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
 <meta charset="utf-8" />
-<title>PLZ5 VNB Karte</title>
+<title>VNB-Karte</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   #map { height: 100vh; margin:0; }
 </style>
@@ -12,16 +13,53 @@
 <body>
 <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
-const map = L.map('map').setView([51, 10], 6);
+// Karte initialisieren
+var map = L.map('map').setView([51, 10], 6);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-// dein Google Sheet CSV-Link
-const sheetURL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQYa1slwzMSIjSdqfiBUfDDhjUQewmxhgYHEiTaDMEkQWYoLkULHHoytt56ZEoibQyeVjrqI7CfeIK1/pub?output=csv";
+let mapping = {};
 
-// hier PLZ→VNB mapp
+// CSV laden und Mapping bauen
+fetch('mapping.csv')
+  .then(res => res.text())
+  .then(csv => {
+    csv.split('\n').slice(1).forEach(row => {
+      const [plz, vnb, wert] = row.trim().split(';');
+      if (plz) mapping[plz.padStart(5,'0')] = parseFloat(wert);
+    });
+  })
+  .then(() => {
+    // GeoJSON laden
+    fetch('plz-5stellig.geojson')
+      .then(res => res.json())
+      .then(geojson => {
+        L.geoJSON(geojson, {
+          style: function(feature) {
+            const plz = feature.properties.plz;
+            const wert = mapping[plz];
+            const color = wert !== undefined 
+              ? getColor(wert) 
+              : '#ccc';
+            return { color: color, weight: 1, fillOpacity: 0.6 };
+          },
+          onEachFeature: function (feature, layer) {
+            const plz = feature.properties.plz;
+            const wert = mapping[plz] !== undefined ? mapping[plz] : 'keine Daten';
+            layer.bindPopup(`<b>PLZ:</b> ${plz}<br><b>Wert:</b> ${wert}`);
+          }
+        }).addTo(map);
+      });
+  });
+
+function getColor(wert) {
+  const r = Math.round(255 * (1-wert));
+  const g = Math.round(255 * wert);
+  return `rgb(${r},${g},0)`;
+}
+</script>
+</body>
+</html>
