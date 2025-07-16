@@ -44,7 +44,7 @@ fetch('mapping.csv')
                 style: feature => {
                     const plz = feature.properties.plz;
                     const info = mapping[plz];
-                    let color = '#cccccc'; // default: grau
+                    let color = '#cccccc'; // grau, wenn keine daten
                     if(info && !isNaN(info.wert)){
                         const value = Math.max(0, Math.min(1, info.wert));
                         const r = Math.round(255 * (1 - value));
