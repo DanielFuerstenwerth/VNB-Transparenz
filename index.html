@@ -1,64 +1,66 @@
 <!DOCTYPE html>
-<html lang="de">
+<html>
 <head>
-<meta charset="utf-8" />
-<title>VNB-Karte</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>
-  #map { height: 100vh; margin:0; }
-</style>
+<meta charset="utf-8">
+<title>VNB Karte</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
-<body>
-<div id="map"></div>
+<body style="margin:0">
+<div id="map" style="height:100vh;"></div>
 
 <script>
-// Karte initialisieren
-var map = L.map('map').setView([51, 10], 6);
+const map = L.map('map').setView([51.1657, 10.4515], 6);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 18
+  maxZoom: 19
 }).addTo(map);
 
 let mapping = {};
 
-// CSV laden und Mapping bauen
-fetch('mapping.csv')
-  .then(res => res.text())
-  .then(csv => {
-    csv.split('\n').slice(1).forEach(row => {
-      const [plz, vnb, wert] = row.trim().split(';');
-      if (plz) mapping[plz.padStart(5,'0')] = parseFloat(wert);
+Papa.parse('mapping.csv', {
+  download: true,
+  header: true,
+  delimiter: ";",
+  complete: function(results) {
+    results.data.forEach(row => {
+      mapping[row.PLZ] = parseFloat(row.WERT);
     });
-  })
-  .then(() => {
-    // GeoJSON laden
-    fetch('plz-5stellig.geojson')
-      .then(res => res.json())
-      .then(geojson => {
-        L.geoJSON(geojson, {
-          style: function(feature) {
-            const plz = feature.properties.plz;
-            const wert = mapping[plz];
-            const color = wert !== undefined 
-              ? getColor(wert) 
-              : '#ccc';
-            return { color: color, weight: 1, fillOpacity: 0.6 };
-          },
-          onEachFeature: function (feature, layer) {
-            const plz = feature.properties.plz;
-            const wert = mapping[plz] !== undefined ? mapping[plz] : 'keine Daten';
-            layer.bindPopup(`<b>PLZ:</b> ${plz}<br><b>Wert:</b> ${wert}`);
-          }
-        }).addTo(map);
-      });
-  });
+    loadGeoJSON();
+  }
+});
 
-function getColor(wert) {
-  const r = Math.round(255 * (1-wert));
-  const g = Math.round(255 * wert);
-  return `rgb(${r},${g},0)`;
+function getColor(value) {
+  return value > 0.8 ? '#006837' :
+         value > 0.6 ? '#31a354' :
+         value > 0.4 ? '#78c679' :
+         value > 0.2 ? '#c2e699' :
+                       '#ffffcc';
+}
+
+function loadGeoJSON() {
+  fetch('plz5.geojson')
+    .then(res => res.json())
+    .then(data => {
+      L.geoJSON(data, {
+        style: function(feature) {
+          const plz = feature.properties.plz;
+          const wert = mapping[plz];
+          return {
+            color: 'black',
+            weight: 0.3,
+            fillOpacity: 0.7,
+            fillColor: getColor(wert || 0)
+          };
+        },
+        onEachFeature: function(feature, layer) {
+          const plz = feature.properties.plz;
+          const wert = mapping[plz];
+          layer.bindPopup(`PLZ: ${plz}<br>WERT: ${wert !== undefined ? wert : 'n/a'}`);
+        }
+      }).addTo(map);
+    });
 }
 </script>
 </body>
