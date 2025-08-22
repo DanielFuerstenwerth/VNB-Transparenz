@@ -1,24 +1,27 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>VNB-Transparenz</title>
-
-<link rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-<style>
-  html,body,#map{height:100%;margin:0}
-  .legend{position:absolute;bottom:10px;left:10px;z-index:800;background:#fff;padding:8px 10px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.2);max-height:40vh;overflow:auto;font:12px system-ui,Arial}
-  .legend .row{display:flex;gap:8px;align-items:center;margin:4px 0}
-  .legend .sw{width:14px;height:14px;border-radius:3px;border:1px solid #0002}
-  .bar{position:absolute;top:10px;left:10px;z-index:800;background:#fff;padding:8px 10px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.2);display:flex;gap:8px;align-items:center;font:13px system-ui,Arial}
-  .bar input{padding:6px 8px;border:1px solid #ccc;border-radius:6px;width:200px}
-  .pill{padding:4px 8px;border:1px solid #ccc;border-radius:999px;cursor:pointer;user-select:none}
-  .pill.active{background:#eee}
-  .toast{position:absolute;top:10px;right:10px;background:#fff;border-left:4px solid #e11;padding:8px 10px;font:12px system-ui,Arial;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.2);max-width:40ch}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VNB-Transparenz</title>
+  <link rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    html,body,#map {height:100%;margin:0}
+    .legend{position:absolute;bottom:10px;left:10px;z-index:800;
+      background:#fff;padding:8px 10px;border-radius:6px;
+      box-shadow:0 1px 4px rgba(0,0,0,.2);max-height:40vh;overflow:auto;
+      font:12px system-ui,Arial}
+    .legend .row{display:flex;gap:8px;align-items:center;margin:4px 0}
+    .legend .sw{width:14px;height:14px;border-radius:3px;border:1px solid #0002}
+    .bar{position:absolute;top:10px;left:10px;z-index:800;
+      background:#fff;padding:8px 10px;border-radius:6px;
+      box-shadow:0 1px 4px rgba(0,0,0,.2);
+      display:flex;gap:8px;align-items:center;font:13px system-ui,Arial}
+    .bar input{padding:6px 8px;border:1px solid #ccc;border-radius:6px;width:200px}
+    .pill{padding:4px 8px;border:1px solid #ccc;border-radius:999px;cursor:pointer;user-select:none}
+    .pill.active{background:#eee}
+  </style>
 </head>
 <body>
 <div id="map"></div>
@@ -27,126 +30,135 @@
   <div id="tgl" class="pill">Grenzen an/aus</div>
 </div>
 <div id="leg" class="legend"><b>VNB</b><div id="rows"></div></div>
-<div id="toast" class="toast" style="display:none"></div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const showErr = (msg)=>{const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';console.error(msg)};
-if(!window.L){showErr('Leaflet nicht geladen.');}
+const CSV_URL = 'mapping.csv';
+const GEO_URL = 'data/plz_simplified.geojson';
 
-const map = L.map('map').setView([51.2,10.4],6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:12,attribution:'© OpenStreetMap'}).addTo(map);
-
-const tryFetch = async (paths, type='text')=>{
-  for (const p of paths){
-    const r = await fetch(p, {cache:'no-store'});
-    if (!r.ok) continue;
-    const ct = (r.headers.get('content-type')||'').toLowerCase();
-    if (type==='json' && !ct.includes('application/json') && !p.endsWith('.geojson')) {
-      throw new Error(`"${p}" liefert ${ct||'HTML'} statt JSON`);
-    }
-    return type==='json' ? r.json() : r.text();
+// robuste fetch-funktion
+async function fetchStrict(url, type){
+  const r = await fetch(url,{cache:'no-store'});
+  if(!r.ok) throw new Error(url+' → HTTP '+r.status);
+  const ct=(r.headers.get('content-type')||'').toLowerCase();
+  if(type==='json' && !ct.includes('json')){
+    const head=(await r.clone().text()).slice(0,120).replace(/\s+/g,' ');
+    throw new Error(url+' liefert '+ct+'; start: '+head);
   }
-  throw new Error('nicht gefunden: '+paths.join(' | '));
-};
+  return type==='json'? r.json(): r.text();
+}
 
-const parseCSV = (txt, sep=';')=>{
+// hilfsfunktionen
+function parseCSV(txt, sep=';'){
   return txt.trim().split(/\r?\n/).filter(l=>l.trim()).map(l=>l.split(sep).map(s=>s.trim()));
-};
-
-const colorFor = (s)=>{
-  if(!s) s='ohne';
+}
+function colorFor(s){
   let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
   return `hsl(${h%360} 60% 60%)`;
-};
+}
+function getPLZ(f){
+  return String(
+    f.properties?.PLZ ?? f.properties?.plz ?? f.properties?.plz_code ??
+    f.properties?.postcode ?? f.properties?.post_code ?? f.properties?.zip ?? ''
+  );
+}
 
-let bordersOn=true, layer, plzIndex=new Map(), mapping=new Map(), vnbSet=new Set();
+// leaflet map init
+const map = L.map('map').setView([51.16,10.45],6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:12,
+  attribution:'© OpenStreetMap, Daten: Opendatasoft/OSM, BKG'
+}).addTo(map);
 
-(async ()=>{
-  try{
-    const [csvText, geo] = await Promise.all([
-      tryFetch(['mapping.csv','./mapping.csv','/mapping.csv'],'text'),
-      tryFetch(['plz5.geojson','./plz5.geojson','/plz5.geojson'],'json')
-    ]);
+let bordersOn=true, geoLayer, mapping=new Map(), vnbSet=new Set(), plzIndex=new Map();
 
-    const rows = parseCSV(csvText,';');
-    let i0=0;
-    if(rows.length && rows[0].some(x=>isNaN(Number(x))&&/plz|vnb|wert/i.test(x))) i0=1;
-    for(let i=i0;i<rows.length;i++){
-      const [plz,vnb,wertRaw]=rows[i];
-      if(!plz) continue;
-      const wert = Number((wertRaw||'').toString().replace(',','.'));
-      mapping.set(plz,{vnb: vnb||'unbekannt', wert: isNaN(wert)? null: wert});
-      if(vnb) vnbSet.add(vnb);
-    }
+// lade daten
+Promise.all([
+  fetchStrict(CSV_URL,'text'),
+  fetchStrict(GEO_URL,'json')
+]).then(([csvText,geo])=>{
+  if(geo.type!=='FeatureCollection'||!geo.features?.length) throw new Error('GeoJSON leer/ungültig');
 
-    const rowsDiv=document.getElementById('rows');
-    const list=[...vnbSet].sort((a,b)=>a.localeCompare(b,'de'));
-    const cap=80;
-    list.slice(0,cap).forEach(v=>{
-      const d=document.createElement('div'); d.className='row';
-      d.innerHTML=`<span class="sw" style="background:${colorFor(v)}"></span><span>${v}</span>`;
-      d.onclick=()=>zoomToVNB(v);
-      rowsDiv.appendChild(d);
-    });
-    if(list.length>cap){const d=document.createElement('div');d.style.marginTop='6px';d.textContent=`… ${list.length-cap} weitere`;rowsDiv.appendChild(d);}
+  // csv verarbeiten
+  const rows=parseCSV(csvText,';');
+  let start=0;
+  if(rows.length && rows[0].some(x=>isNaN(Number(x))&&/plz|vnb|wert/i.test(x))) start=1;
+  for(let i=start;i<rows.length;i++){
+    const [plz,vnb,wertRaw]=rows[i];
+    if(!plz) continue;
+    const wert=Number((wertRaw||'').toString().replace(',','.'));
+    mapping.set(plz,{vnb:vnb||'unbekannt',wert:isNaN(wert)?null:wert});
+    if(vnb) vnbSet.add(vnb);
+  }
 
-    const style = (f)=>{
-      const props=f.properties||{};
-      const plz=(props.PLZ||props.plz||props.postcode||props.zip||'').toString();
-      const entry=mapping.get(plz);
-      const vnb= entry? entry.vnb : 'ohne Zuordnung';
-      return {color:bordersOn?'#333':'transparent',weight:bordersOn?0.6:0,opacity:bordersOn?0.7:0,fillColor:colorFor(vnb),fillOpacity:0.6};
+  // legende
+  const rowsDiv=document.getElementById('rows');
+  [...vnbSet].sort((a,b)=>a.localeCompare(b,'de')).slice(0,80).forEach(v=>{
+    const d=document.createElement('div'); d.className='row';
+    d.innerHTML=`<span class="sw" style="background:${colorFor(v)}"></span><span>${v}</span>`;
+    d.onclick=()=>zoomToVNB(v);
+    rowsDiv.appendChild(d);
+  });
+
+  // styling
+  const style=f=>{
+    const plz=getPLZ(f);
+    const entry=mapping.get(plz);
+    const vnb=entry?entry.vnb:'ohne Zuordnung';
+    return {
+      color:bordersOn?'#333':'transparent',
+      weight:bordersOn?0.6:0,
+      opacity:bordersOn?0.7:0,
+      fillColor:colorFor(vnb),
+      fillOpacity:0.6
     };
+  };
 
-    const onEach=(f,ly)=>{
-      const props=f.properties||{};
-      const plz=(props.PLZ||props.plz||props.postcode||props.zip||'').toString();
-      plzIndex.set(plz,ly);
-      const entry=mapping.get(plz);
-      const vnb=entry?entry.vnb:'ohne Zuordnung';
-      const wert=entry?entry.wert:null;
-      ly.bindTooltip(`PLZ ${plz}<br>VNB: ${vnb}${wert!=null?`<br>Wert: ${wert}`:''}`,{sticky:true});
-      ly.on({mouseover:e=>e.target.setStyle({weight:2,opacity:1}),
-             mouseout:e=>layer.resetStyle(e.target),
-             click:e=>map.fitBounds(e.target.getBounds(),{maxZoom:9})});
-    };
+  // interaktion
+  const onEach=(f,l)=>{
+    const plz=getPLZ(f);
+    plzIndex.set(plz,l);
+    const entry=mapping.get(plz);
+    const vnb=entry?entry.vnb:'ohne Zuordnung';
+    const wert=entry?entry.wert:null;
+    l.bindTooltip(`PLZ ${plz}<br>VNB: ${vnb}${wert!=null?`<br>Wert: ${wert}`:''}`,{sticky:true});
+    l.on({mouseover:e=>e.target.setStyle({weight:2,opacity:1}),
+          mouseout:e=>geoLayer.resetStyle(e.target),
+          click:e=>map.fitBounds(e.target.getBounds(),{maxZoom:9})});
+  };
 
-    layer=L.geoJSON(geo,{style,onEachFeature:onEach}).addTo(map);
-    map.fitBounds(layer.getBounds(),{padding:[20,20]});
+  // zeichnen
+  geoLayer=L.geoJSON(geo,{style,onEachFeature:onEach}).addTo(map);
+  map.fitBounds(geoLayer.getBounds());
 
-    document.getElementById('tgl').onclick=()=>{bordersOn=!bordersOn;document.getElementById('tgl').classList.toggle('active',!bordersOn);layer.setStyle(style);};
-    document.getElementById('q').addEventListener('keydown',e=>{
-      if(e.key!=='Enter')return;
-      const q=e.target.value.trim().toLowerCase(); if(!q)return;
-      if(plzIndex.has(q)){const ly=plzIndex.get(q); map.fitBounds(ly.getBounds(),{maxZoom:9}); ly.fire('mouseover'); return;}
-      let found=null;
-      layer.eachLayer(ly=>{
-        const f=ly.feature, props=f.properties||{};
-        const plz=(props.PLZ||props.plz||props.postcode||props.zip||'').toString();
-        const v=(mapping.get(plz)||{}).vnb||'';
-        if(!found && v.toLowerCase().includes(q)) found=ly;
-      });
-      if(found){map.fitBounds(found.getBounds(),{maxZoom:8}); found.fire('mouseover');}
+  // ui handler
+  document.getElementById('tgl').onclick=()=>{bordersOn=!bordersOn;geoLayer.setStyle(style);};
+  document.getElementById('q').addEventListener('keydown',e=>{
+    if(e.key!=='Enter') return;
+    const q=e.target.value.trim().toLowerCase(); if(!q) return;
+    if(plzIndex.has(q)){const ly=plzIndex.get(q);map.fitBounds(ly.getBounds(),{maxZoom:9});ly.fire('mouseover');return;}
+    let found=null;
+    geoLayer.eachLayer(ly=>{
+      const plz=getPLZ(ly.feature);
+      const v=(mapping.get(plz)||{}).vnb||'';
+      if(!found && v.toLowerCase().includes(q)) found=ly;
     });
+    if(found){map.fitBounds(found.getBounds(),{maxZoom:8});found.fire('mouseover');}
+  });
 
-    function zoomToVNB(name){
-      const bds=[];
-      layer.eachLayer(ly=>{
-        const f=ly.feature, props=f.properties||{};
-        const plz=(props.PLZ||props.plz||props.postcode||props.zip||'').toString();
-        const entry=mapping.get(plz);
-        if(entry && entry.vnb===name) bds.push(ly.getBounds());
-      });
-      if(bds.length){
-        const all=bds.reduce((acc,b)=>acc?acc.extend(b):L.latLngBounds(b),null);
-        map.fitBounds(all,{padding:[20,20]});
-      }
+  function zoomToVNB(vnbName){
+    const bds=[];
+    geoLayer.eachLayer(ly=>{
+      const plz=getPLZ(ly.feature);
+      const entry=mapping.get(plz);
+      if(entry && entry.vnb===vnbName) bds.push(ly.getBounds());
+    });
+    if(bds.length){
+      const all=bds.reduce((acc,b)=>acc?acc.extend(b):L.latLngBounds(b),null);
+      map.fitBounds(all,{padding:[20,20]});
     }
-
-  }catch(e){ showErr('Ladefehler: '+e.message); }
-})();
+  }
+}).catch(e=>{alert('Fehler: '+e.message);console.error(e);});
 </script>
 </body>
 </html>
