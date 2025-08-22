@@ -39,11 +39,14 @@ const map = L.map('map').setView([51.2,10.4],6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:12,attribution:'© OpenStreetMap'}).addTo(map);
 
 const tryFetch = async (paths, type='text')=>{
-  for(const p of paths){
-    try{
-      const r = await fetch(p,{cache:'no-store'});
-      if(r.ok) return type==='json'? r.json(): r.text();
-    }catch(e){}
+  for (const p of paths){
+    const r = await fetch(p, {cache:'no-store'});
+    if (!r.ok) continue;
+    const ct = (r.headers.get('content-type')||'').toLowerCase();
+    if (type==='json' && !ct.includes('application/json') && !p.endsWith('.geojson')) {
+      throw new Error(`"${p}" liefert ${ct||'HTML'} statt JSON`);
+    }
+    return type==='json' ? r.json() : r.text();
   }
   throw new Error('nicht gefunden: '+paths.join(' | '));
 };
