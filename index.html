@@ -1,75 +1,212 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="de">
 <head>
-<meta charset="utf-8">
-<title>VNB Karte</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<style>
-  #map {
-    height: 90vh;
-    width: 100%;
-  }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VNB-Transparenz – alle VNB auf Karte</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    html,body,#map { height:100%; margin:0; }
+    .legend {
+      position: absolute; bottom: 10px; left: 10px; z-index: 800;
+      background: white; padding: 8px 10px; border-radius: 6px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2); max-height: 40vh; overflow:auto;
+      font: 12px/1.3 system-ui, Arial, sans-serif;
+    }
+    .legend .row { display:flex; align-items:center; gap:8px; margin:4px 0; }
+    .legend .swatch { width:14px; height:14px; border-radius:3px; border:1px solid #0002; }
+    .topbar {
+      position:absolute; top:10px; left:10px; z-index:800;
+      background:white; padding:8px 10px; border-radius:6px; box-shadow:0 1px 4px rgba(0,0,0,.2);
+      display:flex; gap:8px; align-items:center; font: 13px system-ui, Arial, sans-serif;
+    }
+    .topbar input { padding:6px 8px; border:1px solid #ccc; border-radius:6px; width:180px; }
+    .pill { padding:4px 8px; border:1px solid #ccc; border-radius:999px; cursor:pointer; user-select:none; }
+    .pill.active { background:#efefef; }
+  </style>
 </head>
-
 <body>
-<div id="map"></div>
+  <div id="map"></div>
+  <div class="topbar">
+    <input id="search" placeholder="PLZ oder VNB suchen…" />
+    <div id="toggleBorders" class="pill">Grenzen an/aus</div>
+  </div>
+  <div id="legend" class="legend"><b>VNB</b><div id="legendRows"></div></div>
 
-<script>
-const map = L.map('map').setView([51.1657, 10.4515], 6);
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+  // --- utils ---
+  function parseCSV(text, sep=';') {
+    const lines = text.trim().split(/\r?\n/);
+    const out = [];
+    for (let i=0;i<lines.length;i++){
+      if(!lines[i].trim()) continue;
+      const parts = lines[i].split(sep).map(s=>s.trim());
+      out.push(parts);
+    }
+    return out;
+  }
+  // stabile farben je VNB
+  function colorFor(name){
+    // simple string-hash -> HSL
+    let h = 0;
+    for (let i=0;i<name.length;i++) h = (h*31 + name.charCodeAt(i)) >>> 0;
+    const hue = h % 360;
+    return `hsl(${hue} 60% 60%)`;
+  }
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 12,
-}).addTo(map);
+  // --- map init ---
+  const map = L.map('map').setView([51.2, 10.4], 6);
+  const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 12, attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
 
-let mapping = {};
+  let bordersOn = true;
+  const toggleBtn = document.getElementById('toggleBorders');
+  toggleBtn.onclick = () => {
+    bordersOn = !bordersOn;
+    toggleBtn.classList.toggle('active', !bordersOn);
+    geojsonLayer.setStyle(styleFeature); // neu anwenden
+  };
 
-// mapping.csv laden
-fetch('mapping.csv')
-  .then(res => res.text())
-  .then(csv => {
-      csv.split('\n').slice(1).forEach(row => {
-          const [plz,vnb,wert] = row.trim().split(';');
-          if(plz) mapping[plz] = {vnb, wert: parseFloat(wert)};
+  const legendRows = document.getElementById('legendRows');
+  const searchInput = document.getElementById('search');
+
+  let mapping = new Map(); // plz -> {vnb, wert}
+  let vnbSet = new Set();
+  let geojsonLayer;
+  let plzIndex = new Map(); // plz -> layer
+
+  Promise.all([
+    fetch('mapping.csv').then(r => {
+      if(!r.ok) throw new Error('mapping.csv fehlt');
+      return r.text();
+    }),
+    fetch('plz5.geojson').then(r => {
+      if(!r.ok) throw new Error('plz5.geojson fehlt');
+      return r.json();
+    })
+  ])
+  .then(([csvText, geo]) => {
+    const rows = parseCSV(csvText, ';');
+    // Header erkennen: falls erste Zeile Strings enthält
+    let start = 0;
+    if (rows.length && rows[0].some(x => isNaN(Number(x)) && /plz|vnb|wert/i.test(x))) start = 1;
+
+    for (let i=start;i<rows.length;i++){
+      const [plz, vnb, wertRaw] = rows[i];
+      if(!plz) continue;
+      const wert = Number((wertRaw||'').toString().replace(',','.'));
+      mapping.set(plz, { vnb: vnb || 'unbekannt', wert: isNaN(wert) ? null : wert });
+      if (vnb) vnbSet.add(vnb);
+    }
+
+    // Legend bauen (alphabetisch, gedeckelt falls sehr viele)
+    const vnbList = Array.from(vnbSet).sort((a,b)=>a.localeCompare(b,'de'));
+    const maxLegend = 80; // hartes Limit fürs Panel
+    const shown = vnbList.slice(0, maxLegend);
+    shown.forEach(v => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<span class="swatch" style="background:${colorFor(v)}"></span><span>${v}</span>`;
+      row.onclick = () => filterByVNB(v);
+      legendRows.appendChild(row);
+    });
+    if (vnbList.length > maxLegend){
+      const more = document.createElement('div');
+      more.style.marginTop = '6px';
+      more.textContent = `… ${vnbList.length - maxLegend} weitere`;
+      legendRows.appendChild(more);
+    }
+
+    function styleFeature(feat){
+      const plz = (feat.properties.PLZ || feat.properties.plz || feat.properties.postcode || '').toString();
+      const entry = mapping.get(plz);
+      const vnb = entry ? entry.vnb : 'ohne Zuordnung';
+      const fillColor = colorFor(vnb);
+      return {
+        color: bordersOn ? '#333' : 'transparent',
+        weight: bordersOn ? 0.6 : 0,
+        opacity: bordersOn ? 0.7 : 0,
+        fillColor,
+        fillOpacity: 0.6
+      };
+    }
+
+    function onEachFeature(feat, layer){
+      const plz = (feat.properties.PLZ || feat.properties.plz || feat.properties.postcode || '').toString();
+      plzIndex.set(plz, layer);
+      const entry = mapping.get(plz);
+      const vnb = entry ? entry.vnb : 'ohne Zuordnung';
+      const wert = entry ? entry.wert : null;
+      layer.bindTooltip(`PLZ ${plz}<br>VNB: ${vnb}${wert!=null?`<br>Wert: ${wert}`:''}`, {sticky:true});
+      layer.on({
+        mouseover: (e)=> e.target.setStyle({weight:2, opacity:1}),
+        mouseout:  (e)=> geojsonLayer.resetStyle(e.target),
+        click:     (e)=> { map.fitBounds(e.target.getBounds(), {maxZoom: 9}); }
       });
+    }
+
+    geojsonLayer = L.geoJSON(geo, { style: styleFeature, onEachFeature }).addTo(map);
+    map.fitBounds(geojsonLayer.getBounds(), { padding:[20,20] });
+
+    // Suche
+    searchInput.addEventListener('keydown', (e)=>{
+      if (e.key !== 'Enter') return;
+      const q = searchInput.value.trim().toLowerCase();
+      if (!q) return;
+
+      // 1) exakte PLZ
+      if (plzIndex.has(q)){
+        const ly = plzIndex.get(q);
+        map.fitBounds(ly.getBounds(), {maxZoom: 9});
+        ly.fire('mouseover');
+        return;
+      }
+      // 2) VNB match -> zoome auf erste gefundene Fläche
+      let foundLayer = null;
+      geojsonLayer.eachLayer(ly=>{
+        const feat = ly.feature;
+        const plz = (feat.properties.PLZ || feat.properties.plz || feat.properties.postcode || '').toString();
+        const entry = mapping.get(plz);
+        const vnb = (entry && entry.vnb) ? entry.vnb.toLowerCase() : '';
+        if (!foundLayer && vnb.includes(q)) foundLayer = ly;
+      });
+      if (foundLayer){
+        map.fitBounds(foundLayer.getBounds(), {maxZoom: 8});
+        foundLayer.fire('mouseover');
+      }
+    });
+
+    // VNB-Filter (zoom auf alle Flächen eines VNB)
+    function filterByVNB(vnbName){
+      const group = [];
+      geojsonLayer.eachLayer(ly=>{
+        const feat = ly.feature;
+        const plz = (feat.properties.PLZ || feat.properties.plz || feat.properties.postcode || '').toString();
+        const entry = mapping.get(plz);
+        if (entry && entry.vnb === vnbName) group.push(ly.getBounds());
+      });
+      if (group.length){
+        const bounds = group.reduce((acc,b)=> acc? acc.extend(b): L.latLngBounds(b), null);
+        map.fitBounds(bounds, { padding:[20,20] });
+      }
+    }
+
   })
-  .then(() => {
-      fetch('plz5.geojson')
-        .then(res => res.json())
-        .then(data => {
-            L.geoJSON(data, {
-                style: feature => {
-                    const plz = feature.properties.plz;
-                    const info = mapping[plz];
-                    let color = '#cccccc'; // grau, wenn keine daten
-                    if(info && !isNaN(info.wert)){
-                        const value = Math.max(0, Math.min(1, info.wert));
-                        const r = Math.round(255 * (1 - value));
-                        const g = Math.round(255 * value);
-                        color = `rgb(${r},${g},0)`;
-                    }
-                    return {
-                        fillColor: color,
-                        color: '#555',
-                        weight: 0.5,
-                        fillOpacity: 0.6
-                    };
-                },
-                onEachFeature: (feature, layer) => {
-                    const plz = feature.properties.plz;
-                    const info = mapping[plz];
-                    if(info){
-                        layer.bindPopup(`PLZ: ${plz}<br>VNB: ${info.vnb}<br>WERT: ${info.wert}`);
-                    } else {
-                        layer.bindPopup(`PLZ: ${plz}<br>keine Daten`);
-                    }
-                }
-            }).addTo(map);
-        });
+  .catch(err => {
+    alert('Fehler beim Laden: ' + err.message);
+    console.error(err);
   });
-</script>
+  </script>
 </body>
 </html>
