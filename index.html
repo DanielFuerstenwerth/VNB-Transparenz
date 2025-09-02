@@ -1,39 +1,29 @@
-<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Karte – Geometrien only</title>
+<!doctype html><meta charset="utf-8">
+<title>Karte</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>html,body,#map{height:100%;margin:0}</style>
-</head>
-<body>
-<div id="map"></div>
+<div id="map" style="height:100vh"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/topojson-client@3"></script>
 <script>
-const URL_TOPO='data/geo.topo.min.json'; // nur diese Datei
+const URL_TOPO = 'data/geo.topo.min.json';   // ODER: 'data/geo_plz_min.topo.json'
 
 (async()=>{
-  if(typeof topojson==='undefined'){console.error('topojson-client fehlt');return;}
+  const r = await fetch(URL_TOPO,{cache:'no-store'});
+  console.log('topo status', r.status);
+  if(!r.ok) return;
+  const topo = await r.json();
 
-  const r=await fetch(URL_TOPO);
-  if(!r.ok){console.error('HTTP',r.status,URL_TOPO);return;}
-  const topo=await r.json();
+  const keys = Object.keys(topo.objects||{});
+  console.log('objects', keys);
+  const key = keys.find(k => Array.isArray(topo.objects[k]?.geometries) && topo.objects[k].geometries.length);
+  if(!key){ console.error('kein obj mit geometries'); return; }
 
-  // objekt mit geometrien finden (robust)
-  const objs=topo.objects||{};
-  const key=Object.keys(objs).find(k=>Array.isArray(objs[k]?.geometries)&&objs[k].geometries.length)>>
-           Object.keys(objs)[0];
-  if(!key){console.error('TopoJSON objects leer');return;}
-  const geo=topojson.feature(topo, objs[key]);
-  console.log('features:', geo.features?.length||0);
+  const geo = topojson.feature(topo, topo.objects[key]);
+  console.log('features', geo.features?.length||0);
 
-  const map=L.map('map',{minZoom:5,maxZoom:12}).setView([51.2,10.4],6);
+  const map = L.map('map',{minZoom:5,maxZoom:12}).setView([51.2,10.4],6);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
-
-  const layer=L.geoJSON(geo,{style:{color:'#333',weight:.4,fillOpacity:.6,fillColor:'#cfe9ff'}}).addTo(map);
+  const layer = L.geoJSON(geo,{style:{color:'#333',weight:.4,fillOpacity:.6,fillColor:'#cfe9ff'}}).addTo(map);
   if(layer.getLayers().length) map.fitBounds(layer.getBounds(),{padding:[20,20]});
 })();
 </script>
-</body>
-</html>
