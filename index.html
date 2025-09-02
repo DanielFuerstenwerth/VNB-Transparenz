@@ -1,6 +1,6 @@
 <!doctype html><html lang="de"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>VNB-Karte (Basis)</title>
+<title>VNB-Karte (Basis, sicher)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>html,body,#map{height:100%;margin:0}</style>
 </head><body>
@@ -8,39 +8,46 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/topojson-client@3"></script>
 <script>
-const URL_TOPO='data/geo_plz_min.topo.json';
-const URL_CORE='data/vnb_core_map.json';
+const URL_TOPO='data/geo.topo.min.json?v=1';      // nimm die Originaldatei
+const URL_CORE='data/vnb_core_map.json?v=1';
 
 const map=L.map('map',{minZoom:5,maxZoom:12}).setView([51.2,10.4],6);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
 
-// einfache farbe pro VNB (hash)
 function colorFor(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return `hsl(${h%360} 60% 60%)`;}
 
 (async()=>{
-  const [topoRes,coreRes]=await Promise.all([fetch(URL_TOPO),fetch(URL_CORE)]);
-  const topo=await topoRes.json();
-  const core=await coreRes.json(); // {id: "VNB-Name"}
+  if(typeof topojson==='undefined'){alert('topojson-client wurde nicht geladen'); return;}
 
-  const obj=topo.objects[Object.keys(topo.objects)[0]];
-  const geo=topojson.feature(topo,obj);
+  const [topoRes,coreRes]=await Promise.all([fetch(URL_TOPO,{cache:'no-store'}), fetch(URL_CORE,{cache:'no-store'})]);
+  if(!topoRes.ok) throw new Error('TopoJSON HTTP '+topoRes.status);
+  if(!coreRes.ok) throw new Error('Core HTTP '+coreRes.status);
+
+  const topo=await topoRes.json();
+  const core=await coreRes.json(); // { id: "VNB-Name" }
+
+  // *** wichtig: explizit das Objekt "data" nehmen ***
+  const obj=topo.objects && topo.objects.data;
+  if(!obj){console.error('TopoJSON objects:', topo.objects); throw new Error('TopoJSON: objects.data fehlt');}
+
+  const geo=topojson.feature(topo, obj);
+  console.log('features:', geo.features?.length||0);
+  if(!geo.features || !geo.features.length){alert('Keine Features im GeoJSON'); return;}
 
   const layer=L.geoJSON(geo,{
     style:f=>{
-      const id=f.id||f.properties?.id||'';
-      const name=core[id]||'unbekannt';
+      const id=(f.id||f.properties?.id||'').toString();
+      const name=(core[id]||'unbekannt');
       return {color:'#000',weight:.25,fillOpacity:.85,fillColor:colorFor(name)};
     },
     onEachFeature:(f,l)=>{
-      const id=f.id||f.properties?.id||'';
-      const name=core[id]||'unbekannt';
+      const id=(f.id||f.properties?.id||'').toString();
+      const name=(core[id]||'unbekannt');
       l.bindPopup(`VNB: <b>${name}</b>`);
-      l.on('mouseover',e=>e.target.setStyle({weight:.8}));
-      l.on('mouseout',e=>e.target.setStyle({weight:.25}));
     }
   }).addTo(map);
 
   map.fitBounds(layer.getBounds(),{padding:[20,20]});
-})();
+})().catch(e=>{console.error(e); alert('Fehler: '+e.message)});
 </script>
 </body></html>
