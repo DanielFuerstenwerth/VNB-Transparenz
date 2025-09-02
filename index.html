@@ -1,47 +1,40 @@
 <!doctype html><html lang="de"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>VNB-Karte</title>
+<title>VNB-Karte (Basis)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>html,body,#map{height:100%;margin:0}.legend{position:absolute;bottom:10px;left:10px;background:#fff;padding:8px 10px;border-radius:8px;box-shadow:0 1px 6px #0002;font:12px system-ui}</style>
+<style>html,body,#map{height:100%;margin:0}</style>
 </head><body>
-<div id="map"></div><div class="legend">grün = Liste · rot = sonst</div>
+<div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/topojson-client@3"></script>
 <script>
 const URL_TOPO='data/geo_plz_min.topo.json';
 const URL_CORE='data/vnb_core_map.json';
-const URL_GREEN='https://docs.google.com/spreadsheets/d/e/2PACX-1vSdFqsBs8BIYH_zrZUNKghZtfldvjRglM0ooYBE7CxluMhlqZKgbDbWA1xQNSI1LmLzEX2WIgRMS1Xb/pub?gid=1230652530&single=true&output=csv';
 
 const map=L.map('map',{minZoom:5,maxZoom:12}).setView([51.2,10.4],6);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
 
-function parseCSV(t){
-  const [hdr,...rows]=t.trim().split(/\r?\n/).map(r=>r.split(/,|;|\t/).map(s=>s.trim()));
-  const hi=hdr.map(h=>h.toLowerCase());
-  return rows.map(r=>Object.fromEntries(hi.map((h,i)=>[h,r[i]??''])));
-}
+// einfache farbe pro VNB (hash)
+function colorFor(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return `hsl(${h%360} 60% 60%)`;}
 
 (async()=>{
-  const [topoRes,coreRes,greenRes]=await Promise.all([fetch(URL_TOPO),fetch(URL_CORE),fetch(URL_GREEN,{cache:'no-store'})]);
+  const [topoRes,coreRes]=await Promise.all([fetch(URL_TOPO),fetch(URL_CORE)]);
   const topo=await topoRes.json();
-  const core=await coreRes.json(); // { id: "VNB-Name" }
-  const greenSet=new Set(parseCSV(await greenRes.text()).map(r=>(r.vnb||'').toLowerCase()));
+  const core=await coreRes.json(); // {id: "VNB-Name"}
 
   const obj=topo.objects[Object.keys(topo.objects)[0]];
   const geo=topojson.feature(topo,obj);
 
   const layer=L.geoJSON(geo,{
     style:f=>{
-      const id=f.id || f.properties?.id || '';
-      const name=(core[id]||'').toLowerCase();
-      const green=greenSet.has(name);
-      return {color:'#000',weight:.25,fillOpacity:.85,fillColor:green?'#2ca25f':'#d73027'};
+      const id=f.id||f.properties?.id||'';
+      const name=core[id]||'unbekannt';
+      return {color:'#000',weight:.25,fillOpacity:.85,fillColor:colorFor(name)};
     },
     onEachFeature:(f,l)=>{
-      const id=f.id || f.properties?.id || '';
+      const id=f.id||f.properties?.id||'';
       const name=core[id]||'unbekannt';
-      const green=greenSet.has((name||'').toLowerCase());
-      l.bindPopup(`VNB: <b>${name}</b><br>Status: ${green?'grün':'rot'}`);
+      l.bindPopup(`VNB: <b>${name}</b>`);
       l.on('mouseover',e=>e.target.setStyle({weight:.8}));
       l.on('mouseout',e=>e.target.setStyle({weight:.25}));
     }
