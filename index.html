@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Karte – Geometrien</title>
+<title>Karte – reprojiziert</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>html,body,#map{height:100%;margin:0}</style>
 </head>
@@ -13,68 +13,45 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/topojson-client@3"></script>
 <script>
-// ---- Konfiguration: beide Pfade, wir nehmen den ersten der funktioniert
-const CANDIDATES = ['data/geo_plz_min.topo.json','data/geo.topo.min.json'];
+const URL_TOPO = 'data/geo.topo.min.json';
 
-// EPSG:3857 (WebMercator Meter) -> WGS84 (lon/lat Grad)
+// EPSG:3857 → lon/lat
 function wmToLonLat(x, y){
   const lon = x / 20037508.34 * 180;
   let lat  = y / 20037508.34 * 180;
   lat = 180/Math.PI * (2 * Math.atan(Math.exp(lat * Math.PI/180)) - Math.PI/2);
   return [lon, lat];
 }
-function reprojectGeometry(g){
-  // rekursiv über Koordinaten
-  function walk(c){
-    if (typeof c[0] === 'number') return wmToLonLat(c[0], c[1]);
-    return c.map(walk);
-  }
-  g.coordinates = walk(g.coordinates);
-  return g;
-}
-function isMeterCoords(geojson){
-  // prüfe ein paar punkte: sind |lon| oder |lat| >> 180 -> vermutlich Meter
-  const f = geojson.features?.[0];
-  if(!f) return false;
-  let c = f.geometry?.coordinates;
-  while (Array.isArray(c) && typeof c[0] !== 'number') c = c[0];
-  if (!Array.isArray(c) || typeof c[0] !== 'number') return false;
-  const [x,y] = c;
-  return Math.abs(x) > 180 || Math.abs(y) > 90;
-}
 
-async function loadFirstWorking(urls){
-  for(const u of urls){
-    const r = await fetch(u, {cache:'no-store'});
-    if(r.ok) return r.json();
-  }
-  throw new Error('keine TopoJSON-Datei gefunden');
+// rekursiv alle Koordinaten durchlaufen
+function reprojectCoords(coords){
+  if(typeof coords[0]==='number'){ return wmToLonLat(coords[0], coords[1]); }
+  return coords.map(reprojectCoords);
 }
 
 (async()=>{
-  if(typeof topojson==='undefined'){console.error('topojson-client fehlt');return;}
+  const r = await fetch(URL_TOPO,{cache:'no-store'});
+  if(!r.ok){console.error('TopoJSON HTTP',r.status);return;}
+  const topo = await r.json();
 
-  // 1) Topo laden (erst reduziertes, dann originales)
-  const topo = await loadFirstWorking(CANDIDATES);
+  const key = Object.keys(topo.objects||{})[0];
+  const geo = topojson.feature(topo, topo.objects[key]);
 
-  // 2) GeoJSON erzeugen (erstes Objekt mit Geometrien)
-  const objs = topo.objects || {};
-  const key = Object.keys(objs).find(k => Array.isArray(objs[k]?.geometries) && objs[k].geometries.length)
-           || Object.keys(objs)[0];
-  if(!key){ console.error('TopoJSON ohne geometries'); return; }
-  const geo = topojson.feature(topo, objs[key]);
-
-  // 3) Reprojektion falls nötig
-  if (isMeterCoords(geo)) {
-    geo.features.forEach(f => { f.geometry = reprojectGeometry(f.geometry); });
+  // prüfen, ob Meter-Koordinaten
+  let sample = geo.features[0].geometry.coordinates;
+  while(Array.isArray(sample[0])) sample = sample[0];
+  if(Math.abs(sample[0])>180 || Math.abs(sample[1])>90){
+    geo.features.forEach(f=>{ f.geometry.coordinates = reprojectCoords(f.geometry.coordinates); });
   }
 
-  // 4) Leaflet
-  const map = L.map('map', {minZoom:5, maxZoom:12}).setView([51.2,10.4],6);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OSM'}).addTo(map);
+  const map = L.map('map',{minZoom:5,maxZoom:12}).setView([51.2,10.4],6);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
 
-  const layer = L.geoJSON(geo, { style:{ color:'#333', weight:.4, fillOpacity:.6, fillColor:'#cfe9ff' } }).addTo(map);
-  if (layer.getLayers().length) map.fitBounds(layer.getBounds(), {padding:[20,20]});
+  const layer = L.geoJSON(geo,{
+    style:{color:'#333',weight:.4,fillOpacity:.6,fillColor:'#cfe9ff'}
+  }).addTo(map);
+
+  map.fitBounds(layer.getBounds(),{padding:[20,20]});
 })();
 </script>
 </body>
