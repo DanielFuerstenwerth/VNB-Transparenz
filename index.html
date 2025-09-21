@@ -27,7 +27,7 @@
     }).addTo(map);
 
     async function loadData() {
-      const topoData = await fetch('geo_plz.min.topo.json').then(r => r.json());
+    const topoData = await fetch('geo.topo.min.json').then(r => r.json());
       const plzToValue = await fetch('plz_wert.json').then(r => r.json());
 
       const geojson = topojson.feature(topoData, topoData.objects.plz);
