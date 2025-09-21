@@ -1,58 +1,62 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Karte – reprojiziert</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>html,body,#map{height:100%;margin:0}</style>
+  <meta charset="utf-8" />
+  <title>VNB Transparenz</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 100vh; width: 100vw; }
+  </style>
 </head>
 <body>
-<div id="map"></div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script>
+    const map = L.map('map').setView([51.2, 10.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+    }).addTo(map);
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/topojson-client@3"></script>
-<script>
-const URL_TOPO = 'data/geo.topo.min.json';
+    const plzColors = {};
 
-// EPSG:3857 → lon/lat
-function wmToLonLat(x, y){
-  const lon = x / 20037508.34 * 180;
-  let lat  = y / 20037508.34 * 180;
-  lat = 180/Math.PI * (2 * Math.atan(Math.exp(lat * Math.PI/180)) - Math.PI/2);
-  return [lon, lat];
-}
+    // Schritt 1: lade mapping.csv
+    fetch('data/mapping.csv')
+      .then(res => res.text())
+      .then(csvText => {
+        const parsed = Papa.parse(csvText, { header: true, delimiter: ';' });
+        parsed.data.forEach(row => {
+          const plz = row.PLZ.padStart(5, '0');
+          const wert = parseFloat(row.WERT.replace(',', '.'));
+          plzColors[plz] =
+            isNaN(wert) ? 'gray' :
+            wert >= 0.8 ? 'green' :
+            wert >= 0.5 ? 'orange' : 'red';
+        });
 
-// rekursiv alle Koordinaten durchlaufen
-function reprojectCoords(coords){
-  if(typeof coords[0]==='number'){ return wmToLonLat(coords[0], coords[1]); }
-  return coords.map(reprojectCoords);
-}
-
-(async()=>{
-  const r = await fetch(URL_TOPO,{cache:'no-store'});
-  if(!r.ok){console.error('TopoJSON HTTP',r.status);return;}
-  const topo = await r.json();
-
-  const key = Object.keys(topo.objects||{})[0];
-  const geo = topojson.feature(topo, topo.objects[key]);
-
-  // prüfen, ob Meter-Koordinaten
-  let sample = geo.features[0].geometry.coordinates;
-  while(Array.isArray(sample[0])) sample = sample[0];
-  if(Math.abs(sample[0])>180 || Math.abs(sample[1])>90){
-    geo.features.forEach(f=>{ f.geometry.coordinates = reprojectCoords(f.geometry.coordinates); });
-  }
-
-  const map = L.map('map',{minZoom:5,maxZoom:12}).setView([51.2,10.4],6);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
-
-  const layer = L.geoJSON(geo,{
-    style:{color:'#333',weight:.4,fillOpacity:.6,fillColor:'#cfe9ff'}
-  }).addTo(map);
-
-  map.fitBounds(layer.getBounds(),{padding:[20,20]});
-})();
-</script>
+        // Schritt 2: lade GeoJSON
+        fetch('data/plz5.geojson')
+          .then(res => res.json())
+          .then(geojson => {
+            L.geoJSON(geojson, {
+              style: feature => {
+                const plz = feature.properties.plz;
+                return {
+                  color: '#555',
+                  weight: 1,
+                  fillOpacity: 0.6,
+                  fillColor: plzColors[plz] || 'lightgray'
+                };
+              },
+              onEachFeature: (feature, layer) => {
+                const plz = feature.properties.plz;
+                const color = plzColors[plz] || '–';
+                layer.bindPopup(`PLZ: ${plz}<br>Farbe: ${color}`);
+              }
+            }).addTo(map);
+          });
+      });
+  </script>
 </body>
 </html>
