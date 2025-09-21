@@ -1,62 +1,60 @@
+
 <!DOCTYPE html>
-<html lang="de">
+<html>
 <head>
   <meta charset="utf-8" />
-  <title>VNB Transparenz</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VNB-Transparenz Karte</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    #map { height: 100vh; width: 100vw; }
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://unpkg.com/topojson-client@3"></script>
   <script>
-    const map = L.map('map').setView([51.2, 10.5], 6);
+    const map = L.map('map').setView([51.1657, 10.4515], 6);
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap',
+      maxZoom: 18,
     }).addTo(map);
 
-    const plzColors = {};
+    async function loadData() {
+      const topoData = await fetch('geo_plz.min.topo.json').then(r => r.json());
+      const plzToValue = await fetch('plz_wert.json').then(r => r.json());
 
-    // Schritt 1: lade mapping.csv
-    fetch('data/mapping.csv')
-      .then(res => res.text())
-      .then(csvText => {
-        const parsed = Papa.parse(csvText, { header: true, delimiter: ';' });
-        parsed.data.forEach(row => {
-          const plz = row.PLZ.padStart(5, '0');
-          const wert = parseFloat(row.WERT.replace(',', '.'));
-          plzColors[plz] =
-            isNaN(wert) ? 'gray' :
-            wert >= 0.8 ? 'green' :
-            wert >= 0.5 ? 'orange' : 'red';
-        });
+      const geojson = topojson.feature(topoData, topoData.objects.plz);
 
-        // Schritt 2: lade GeoJSON
-        fetch('data/plz5.geojson')
-          .then(res => res.json())
-          .then(geojson => {
-            L.geoJSON(geojson, {
-              style: feature => {
-                const plz = feature.properties.plz;
-                return {
-                  color: '#555',
-                  weight: 1,
-                  fillOpacity: 0.6,
-                  fillColor: plzColors[plz] || 'lightgray'
-                };
-              },
-              onEachFeature: (feature, layer) => {
-                const plz = feature.properties.plz;
-                const color = plzColors[plz] || '–';
-                layer.bindPopup(`PLZ: ${plz}<br>Farbe: ${color}`);
-              }
-            }).addTo(map);
-          });
-      });
+      L.geoJSON(geojson, {
+        style: feature => {
+          const plz = feature.properties.plz;
+          const value = plzToValue[plz];
+          return {
+            color: 'black',
+            weight: 0.5,
+            fillOpacity: 0.8,
+            fillColor: value == null ? '#ccc' :
+              value >= 0.8 ? 'green' :
+              value >= 0.5 ? 'orange' :
+              'red'
+          };
+        },
+        onEachFeature: (feature, layer) => {
+          const plz = feature.properties.plz;
+          const value = plzToValue[plz];
+          layer.bindPopup(`PLZ: ${plz}<br>Wert: ${value != null ? value : '–'}`);
+        }
+      }).addTo(map);
+    }
+
+    loadData();
   </script>
 </body>
 </html>
