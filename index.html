@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>VNB-Transparenz Karte (Debug)</title>
+  <title>VNB-Transparenz Karte</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
@@ -29,18 +29,33 @@
     fetch("farben.json").then(r => r.json())
   ]).then(([topoData, coreData, colorMap]) => {
     const objName = Object.keys(topoData.objects)[0];
-    console.log("TopoJSON objects:", Object.keys(topoData.objects));
-    console.log("genutztes Objekt:", objName);
-
     const geojson = topojson.feature(topoData, topoData.objects[objName]);
-    console.log("Anzahl Features:", geojson.features.length);
-
-    // Erste 5 Features inspizieren
-    geojson.features.slice(0, 5).forEach((f, i) => {
-      console.log(`Feature ${i} ID:`, f.properties.id, f);
-    });
 
     L.geoJSON(geojson, {
       style: f => {
-        const id = f.properties.id;
-        const c = colorMap[id] ||
+        const id = f.properties.id || f.id;  // robust: falls id woanders liegt
+        const c = id && colorMap[id] ? colorMap[id] : "grey";
+        return {
+          color: "#000",        // Grenzen schwarz
+          weight: 1.0,          // Linienbreite
+          fillColor: c,
+          fillOpacity: 0.6
+        };
+      },
+      onEachFeature: (f, layer) => {
+        const id = f.properties.id || f.id;
+        const meta = id ? coreData[id] : null;
+        if (meta) {
+          layer.bindPopup(`<b>${meta.name}</b>`);
+          layer.bindTooltip(meta.name, { permanent: false, direction: "center" });
+        } else if (id) {
+          layer.bindPopup(`ID: ${id}`);
+        }
+      }
+    }).addTo(map);
+  }).catch(err => {
+    console.error("Fehler beim Laden:", err);
+  });
+</script>
+</body>
+</html>
