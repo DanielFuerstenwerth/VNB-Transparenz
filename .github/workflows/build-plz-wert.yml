@@ -1,0 +1,32 @@
+name: Build plz_wert.json from Google Sheet
+
+on:
+  schedule:
+    - cron: '0 3 * * *'        # täglich um 03:00 Uhr
+  workflow_dispatch:            # manuell auslösbar im Tab "Actions"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Download CSV from Google Sheets
+        run: curl -L "https://docs.google.com/spreadsheets/d/1huo96_hM_yGc8nIZ9KMzpIPuNHfQR6uQU-NnAloHGuQ/export?format=csv" -o data/input.csv
+
+      - name: Convert CSV to JSON
+        run: |
+          echo '{' > data/plz_wert.json
+          tail -n +2 data/input.csv | awk -F',' '{gsub(/"/, "", $1); gsub(/"/, "", $2); printf "\"%s\": %s,\n", $1, $2}' >> data/plz_wert.json
+          sed -i '$ s/,$//' data/plz_wert.json
+          echo '}' >> data/plz_wert.json
+
+      - name: Commit JSON file
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/plz_wert.json
+          git commit -m "Auto-update plz_wert.json from Google Sheets" || echo "No changes"
+          git push
