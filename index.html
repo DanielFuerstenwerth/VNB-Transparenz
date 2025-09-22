@@ -1,60 +1,78 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>VNB-Transparenz Karte</title>
+  <meta charset="UTF-8">
+  <title>VNB-Transparenz</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha512-sA+e2ifC8XGej7p46KecK8h1XQeFJ5o1qWa+0nX7Sw2zLCaORebJ+3Zy3D0DhqqAnfHRXi2mFFfCcpN2ZzP2xQ=="
+    crossorigin=""
+  />
   <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-    }
+    html, body, #map { height: 100%; margin: 0; }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/topojson-client@3"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha512-vtN8f1rG5UgBa2U0pJBA7+F7N4A69V0q9QXc9Z+lzOm+zMlj5r5dC9z9N4Rj1zUmghh5lvGZu9zZJ+Y4LO1LZw=="
+    crossorigin=""></script>
   <script>
-    const map = L.map('map').setView([51.1657, 10.4515], 6);
-
+    const map = L.map('map').setView([51.2, 10.5], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap',
-      maxZoom: 18,
+      maxZoom: 18
     }).addTo(map);
 
-    async function loadData() {
-    const topoData = await fetch('geo.topo.min.json').then(r => r.json());
-      const plzToValue = await fetch('plz_wert.json').then(r => r.json());
+    const csvUrl = "https://docs.google.com/spreadsheets/d/1huo96_hM_yGc8nIZ9KMzpIPuNHfQR6uQU-NnAloHGuQ/export?format=csv&gid=0";
 
-      const geojson = topojson.feature(topoData, topoData.objects.plz);
+    let vnbWerte = {};
 
-      L.geoJSON(geojson, {
-        style: feature => {
-          const plz = feature.properties.plz;
-          const value = plzToValue[plz];
-          return {
-            color: 'black',
-            weight: 0.5,
-            fillOpacity: 0.8,
-            fillColor: value == null ? '#ccc' :
-              value >= 0.8 ? 'green' :
-              value >= 0.5 ? 'orange' :
-              'red'
-          };
-        },
-        onEachFeature: (feature, layer) => {
-          const plz = feature.properties.plz;
-          const value = plzToValue[plz];
-          layer.bindPopup(`PLZ: ${plz}<br>Wert: ${value != null ? value : '–'}`);
+    fetch(csvUrl)
+      .then(res => res.text())
+      .then(csv => {
+        const rows = csv.trim().split('\n').slice(1); // Header überspringen
+        for (const row of rows) {
+          const [vnb, wert] = row.split(',');
+          vnbWerte[vnb.trim()] = parseFloat(wert);
         }
-      }).addTo(map);
+        console.log("Geladene VNB-Werte:", vnbWerte);
+        return loadGeojson(); // erst GeoJSON laden, wenn CSV fertig
+      });
+
+    function getColor(wert) {
+      if (wert === 1) return "green";
+      if (wert === 0) return "red";
+      if (wert >= 0.5) return "#a2d5a2";
+      if (wert > 0) return "#f5a";
+      return "#ccc";
     }
 
-    loadData();
+    function loadGeojson() {
+      fetch("data/plz-gebiete.geojson") // dein GeoJSON mit PLZ-Flächen
+        .then(res => res.json())
+        .then(geojson => {
+          L.geoJSON(geojson, {
+            style: feature => {
+              const name = feature.properties.vnb_name || feature.properties.name || "";
+              const wert = vnbWerte[name] ?? null;
+              return {
+                fillColor: getColor(wert),
+                color: "#666",
+                weight: 0.5,
+                fillOpacity: 0.7
+              };
+            },
+            onEachFeature: (feature, layer) => {
+              const name = feature.properties.vnb_name || feature.properties.name || "";
+              const wert = vnbWerte[name];
+              layer.bindPopup(`<b>${name}</b><br>Wert: ${wert ?? "–"}`);
+            }
+          }).addTo(map);
+        });
+    }
   </script>
 </body>
 </html>
