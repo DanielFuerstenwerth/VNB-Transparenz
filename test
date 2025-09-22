@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Test IDs Vergleich</title>
+</head>
+<body>
+<h2>Testseite: ID-Vergleich</h2>
+<p>Öffne die Browser-Konsole (F12 → Tab „Console“), um die Ergebnisse zu sehen.</p>
+
+<script src="https://unpkg.com/topojson-client@3"></script>
+<script>
+Promise.all([
+  fetch("comtopojson").then(r => r.json()),
+  fetch("VNB_ID").then(r => r.json()),
+  fetch("farben.json").then(r => r.json())
+]).then(([topoData, coreData, colorMap]) => {
+  console.log("✅ Alle Dateien geladen!");
+
+  // IDs aus dem TopoJSON
+  const objName = Object.keys(topoData.objects)[0];
+  const geojson = topojson.feature(topoData, topoData.objects[objName]);
+  const topoIDs = geojson.features.map(f => f.properties.id);
+
+  // IDs aus VNB_ID
+  const vnbIDs = Object.keys(coreData);
+
+  console.log("TopoJSON Features:", topoIDs.length);
+  console.log("VNB_ID Keys:", vnbIDs.length);
+
+  // erste 10 zum Sichttest
+  console.log("Beispiele TopoJSON IDs:", topoIDs.slice(0, 10));
+  console.log("Beispiele VNB_ID Keys:", vnbIDs.slice(0, 10));
+
+  // Differenzen
+  const missingInVNB = topoIDs.filter(id => !vnbIDs.includes(id));
+  const missingInTopo = vnbIDs.filter(id => !topoIDs.includes(id));
+
+  console.log("IDs im TopoJSON, aber NICHT in VNB_ID:", missingInVNB.slice(0, 20));
+  console.log("Anzahl:", missingInVNB.length);
+
+  console.log("IDs in VNB_ID, aber NICHT im TopoJSON:", missingInTopo.slice(0, 20));
+  console.log("Anzahl:", missingInTopo.length);
+
+  // Test Farben
+  console.log("Beispiele Farben-Zuordnung:");
+  topoIDs.slice(0, 10).forEach(id => {
+    console.log(id, "→", colorMap[id] || "(keine Farbe)");
+  });
+
+}).catch(err => {
+  console.error("❌ Fehler beim Laden/Parsen:", err);
+});
+</script>
+</body>
+</html>
