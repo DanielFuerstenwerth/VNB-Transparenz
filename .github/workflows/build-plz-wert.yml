@@ -3,7 +3,7 @@ name: Build plz_wert.json from Google Sheet
 on:
   schedule:
     - cron: '0 3 * * *'        # täglich um 03:00 Uhr
-  workflow_dispatch:            # manuell auslösbar im Tab "Actions"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -14,41 +14,54 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download Google Sheet (VNB → Wert)
-        run: curl -L "https://docs.google.com/spreadsheets/d/1huo96_hM_yGc8nIZ9KMzpIPuNHfQR6uQU-NnAloHGuQ/export?format=csv" -o data/vnb_input.csv
+        run: curl -L "https://docs.google.com/spreadsheets/d/1huo96_hM_yGc8nIZ9KMzpIPuNHfQR6uQU-NnAloHGuQ/export?format=csv" -o data/input.csv
 
       - name: Install Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
+        run: sudo apt-get install -y python3 python3-pip
 
       - name: Convert Google Sheet + Mapping to plz_wert.json
         run: |
           python3 <<EOF
-          import csv, json
+import csv
+import json
+import os
 
-          # Lade Mapping: PLZ → VNB
-          with open("data/plz_vnb.json", encoding="utf-8") as f:
-              plz_vnb = json.load(f)
+# Pfade
+vnb_wert_csv = 'data/input.csv'
+plz_vnb_json = 'data/plz_vnb.json'
+plz_wert_json = 'data/plz_wert.json'
 
-          # Lade Tabelle: VNB → Wert
-          vnb_wert = {}
-          with open("data/vnb_input.csv", encoding="utf-8") as f:
-              reader = csv.reader(f)
-              next(reader)  # skip header
-              for row in reader:
-                  if len(row) >= 2 and row[0] and row[1]:
-                      vnb_wert[row[0].strip()] = float(row[1].strip())
+# Laden: VNB → Wert
+vnb_to_value = {}
+with open(vnb_wert_csv, newline='', encoding='utf-8') as csvfile:
+    reader = csv.DictReader(csvfile)
+    for row in reader:
+        vnb = row.get('VNB', '').strip()
+        wert = row.get('Wert', '').strip()
+        if vnb and wert:
+            try:
+                vnb_to_value[vnb] = float(wert)
+            except ValueError:
+                continue  # ungültiger Wert, überspringen
 
-          # Erzeuge neues Mapping: PLZ → Wert
-          plz_wert = {}
-          for plz, vnb in plz_vnb.items():
-              if vnb in vnb_wert:
-                  plz_wert[plz] = vnb_wert[vnb]
+# Laden: PLZ → VNB
+if not os.path.exists(plz_vnb_json):
+    raise FileNotFoundError(f"{plz_vnb_json} fehlt!")
 
-          # Speichern
-          with open("data/plz_wert.json", "w", encoding="utf-8") as f:
-              json.dump(plz_wert, f, ensure_ascii=False, indent=2)
-          EOF
+with open(plz_vnb_json, encoding='utf-8') as f:
+    plz_to_vnb = json.load(f)
+
+# Kombinieren: PLZ → Wert (über VNB)
+plz_to_value = {}
+for plz, vnb in plz_to_vnb.items():
+    value = vnb_to_value.get(vnb)
+    if value is not None:
+        plz_to_value[plz] = value
+
+# Speichern
+with open(plz_wert_json, 'w', encoding='utf-8') as f:
+    json.dump(plz_to_value, f, indent=2, ensure_ascii=False)
+EOF
 
       - name: Commit JSON file
         run: |
