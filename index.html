@@ -33,13 +33,13 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende'
   }).addTo(map);
 
-  // Daten laden: TopoJSON (Geometrien), VNB_ID (Namen), farben.json (Farben)
+  // Daten laden: comtopojson (Geometrien), VNB_ID (Namen), farben.json (Farben)
   Promise.all([
     fetch("comtopojson").then(r => r.json()),
-    fetch("VNB_ID.json").then(r => r.json()),   // falls deine Datei VNB_ID.txt heißt, hier anpassen!
+    fetch("VNB_ID").then(r => r.json()),
     fetch("farben.json").then(r => r.json())
   ]).then(([topoData, coreData, colorMap]) => {
-    // Name des Objekts im TopoJSON herausfinden (z. B. "vnb")
+    // Object-Name im TopoJSON ermitteln (z. B. "vnb")
     const objName = Object.keys(topoData.objects)[0];
     const geojson = topojson.feature(topoData, topoData.objects[objName]);
 
