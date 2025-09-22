@@ -17,6 +17,13 @@
   <script>
     const map = L.map('map').setView([51.2, 10.4], 6);
 
+    // Hintergrundkarte hinzufügen
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 18
+    }).addTo(map);
+
+    // TopoJSON laden und als GeoJSON darstellen
     fetch("Polygone.json")
       .then(r => r.json())
       .then(topoData => {
@@ -25,9 +32,9 @@
 
         L.geoJSON(geojson, {
           style: {
-            color: "black",
+            color: "red",    // rote Umrisse
             weight: 1,
-            fill: false
+            fill: false      // keine Füllung
           }
         }).addTo(map);
       });
