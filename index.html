@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>VNB-Polygone Debug</title>
+  <title>VNB Polygone</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
@@ -18,38 +18,33 @@
 <script>
   const map = L.map('map').setView([51.2, 10.4], 6);
 
-  Promise.all([
-    fetch("comtopojson").then(r => r.json()),
-    fetch("VNB_ID").then(r => r.json()),
-    fetch("farben.json").then(r => r.json())
-  ]).then(([topoData, coreData, colorMap]) => {
-    const objName = Object.keys(topoData.objects)[0];
-    const geojson = topojson.feature(topoData, topoData.objects[objName]);
+  fetch("Polygone.json")
+    .then(r => r.json())
+    .then(topoData => {
+      const objName = Object.keys(topoData.objects)[0];
+      console.log("Objekte:", Object.keys(topoData.objects));
+      const geojson = topojson.feature(topoData, topoData.objects[objName]);
 
-    console.log("Anzahl Features:", geojson.features.length);
-    console.log("Beispiel Feature:", geojson.features[0]);
-
-    const layer = L.geoJSON(geojson, {
-      style: f => {
-        // erstmal alles grau einfärben
-        return {
-          color: "#000",
+      const layer = L.geoJSON(geojson, {
+        style: {
+          color: "#000",        // schwarze Grenzen
           weight: 1,
-          fillColor: "lightgrey",
-          fillOpacity: 0.6
-        };
-      },
-      onEachFeature: (f, layer) => {
-        // alle properties als JSON anzeigen
-        const props = JSON.stringify(f.properties, null, 2);
-        layer.bindPopup(`<pre>${props}</pre>`);
-      }
-    }).addTo(map);
+          fillColor: "#ccc",    // graue Flächen
+          fillOpacity: 0.5
+        },
+        onEachFeature: (f, layer) => {
+          layer.bindPopup(`ID: ${f.id}`);
+        }
+      }).addTo(map);
 
-    map.fitBounds(layer.getBounds());
-  }).catch(err => {
-    console.error("Fehler beim Laden:", err);
-  });
+      // automatische Ausrichtung
+      if (layer.getBounds().isValid()) {
+        map.fitBounds(layer.getBounds());
+      }
+    })
+    .catch(err => {
+      console.error("Fehler beim Laden:", err);
+    });
 </script>
 </body>
 </html>
