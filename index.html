@@ -1,55 +1,70 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>VNB-Transparenz Karte</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
   </style>
 </head>
 <body>
-  <div id="map"></div>
+<div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/topojson-client@3"></script>
-  <script>
-    const map = L.map('map').setView([51.1657, 10.4515], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap',
-      maxZoom: 18,
-    }).addTo(map);
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/topojson-client@3"></script>
 
-    async function loadData() {
-      const topoData = await fetch('geo.topo.min.json').then(r => r.json());
-      const vnbMap = await fetch('vnb_core_map.json').then(r => r.json());
-      const vnbToValue = await fetch('plz_wert.json').then(r => r.json());
+<script>
+  // Karte initialisieren
+  const map = L.map('map').setView([51.2, 10.4], 6);
 
-      const geojson = topojson.feature(topoData, topoData.objects.default);
+  // OpenStreetMap Hintergrund
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende'
+  }).addTo(map);
 
-      L.geoJSON(geojson, {
-        style: feature => {
-          const vnb = vnbMap[feature.id];
-          const value = vnbToValue[vnb];
-          return {
-            color: 'black',
-            weight: 0.5,
-            fillOpacity: 0.8,
-            fillColor: value == null ? '#ccc' :
-              value >= 0.8 ? 'green' :
-              value >= 0.5 ? 'orange' : 'red'
-          };
-        },
-        onEachFeature: (feature, layer) => {
-          const vnb = vnbMap[feature.id];
-          const value = vnbToValue[vnb];
-          layer.bindPopup(`VNB: ${vnb || 'unbekannt'}<br>Wert: ${value != null ? value : '–'}`);
+  // Daten laden: TopoJSON (Geometrien), VNB_ID (Namen), farben.json (Farben)
+  Promise.all([
+    fetch("comtopojson").then(r => r.json()),
+    fetch("VNB_ID.json").then(r => r.json()),   // falls deine Datei VNB_ID.txt heißt, hier anpassen!
+    fetch("farben.json").then(r => r.json())
+  ]).then(([topoData, coreData, colorMap]) => {
+    // Name des Objekts im TopoJSON herausfinden (z. B. "vnb")
+    const objName = Object.keys(topoData.objects)[0];
+    const geojson = topojson.feature(topoData, topoData.objects[objName]);
+
+    // Layer zeichnen
+    L.geoJSON(geojson, {
+      style: f => {
+        const id = f.properties.id;
+        const c = colorMap[id] || "grey";
+        return {
+          color: "#333",
+          weight: 1,
+          fillColor: c,
+          fillOpacity: 0.6
+        };
+      },
+      onEachFeature: (f, layer) => {
+        const meta = coreData[f.properties.id];
+        if (meta) {
+          layer.bindPopup(`<b>${meta.name}</b>`);
+        } else {
+          layer.bindPopup(`ID: ${f.properties.id}`);
         }
-      }).addTo(map);
-    }
-
-    loadData();
-  </script>
+      }
+    }).addTo(map);
+  });
+</script>
 </body>
 </html>
