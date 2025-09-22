@@ -2,38 +2,58 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>Polygon-Debug</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VNB Polygone Basic</title>
+
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
   <style>
-    html, body, #map {
-      height: 100%;
+    html, body {
       margin: 0;
       padding: 0;
+      height: 100%;
+      width: 100%;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #eee;
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
+  <!-- Leaflet + TopoJSON -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/topojson-client@3"></script>
 
   <script>
+    // Karte initialisieren
     const map = L.map('map').setView([51.2, 10.4], 6);
 
-    fetch("comtopojson")
+    // Polygone laden
+    fetch("Polygone.json")
       .then(r => r.json())
       .then(topoData => {
-        console.log("TopoJSON geladen:", topoData);
+        console.log("Objekte:", Object.keys(topoData.objects));
 
-        const objName = Object.keys(topoData.objects)[0];
-        console.log("Objekte im TopoJSON:", objName);
+        // TopoJSON → GeoJSON
+        const geojson = topojson.feature(topoData, topoData.objects.data);
+        console.log("Features:", geojson.features.length);
 
-        const geojson = topojson.feature(topoData, topoData.objects[objName]);
-        console.log("GeoJSON Features:", geojson.features.length);
-        console.log("Beispiel Feature:", geojson.features[0]);
+        // GeoJSON in Karte rendern
+        L.geoJSON(geojson, {
+          style: {
+            color: "red",
+            weight: 1,
+            fillOpacity: 0.05
+          }
+        }).addTo(map);
 
-        // Geometrie-Typen auflisten
-        const types = new Set(geojson.features.map(f => f.geometry.type));
-        console.log("Gefundene Geometrie-Typen:", Array.f
+        // Automatisch auf die Daten zoomen
+        map.fitBounds(L.geoJSON(geojson).getBounds());
+      });
+  </script>
+</body>
+</html>
