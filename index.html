@@ -2,19 +2,11 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>VNB-Transparenz Karte</title>
+  <title>VNB-Transparenz Karte (Debug)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      width: 100%;
-    }
-    #map {
-      width: 100%;
-      height: 100%;
-    }
+    html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
+    #map { width: 100%; height: 100%; }
   </style>
 </head>
 <body>
@@ -24,49 +16,31 @@
 <script src="https://unpkg.com/topojson-client@3"></script>
 
 <script>
-  // Karte initialisieren
   const map = L.map('map').setView([51.2, 10.4], 6);
 
-  // OpenStreetMap Hintergrund
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende'
   }).addTo(map);
 
-  // Daten laden
   Promise.all([
     fetch("comtopojson").then(r => r.json()),
-    fetch("VNB_ID").then(r => r.json()),     // ohne Endung
+    fetch("VNB_ID").then(r => r.json()),
     fetch("farben.json").then(r => r.json())
   ]).then(([topoData, coreData, colorMap]) => {
     const objName = Object.keys(topoData.objects)[0];
-    const geojson = topojson.feature(topoData, topoData.objects[objName]);
+    console.log("TopoJSON objects:", Object.keys(topoData.objects));
+    console.log("genutztes Objekt:", objName);
 
-    // Layer zeichnen
+    const geojson = topojson.feature(topoData, topoData.objects[objName]);
+    console.log("Anzahl Features:", geojson.features.length);
+
+    // Erste 5 Features inspizieren
+    geojson.features.slice(0, 5).forEach((f, i) => {
+      console.log(`Feature ${i} ID:`, f.properties.id, f);
+    });
+
     L.geoJSON(geojson, {
       style: f => {
         const id = f.properties.id;
-        const c = colorMap[id] || "grey";
-        return {
-          color: "#000",        // schwarze Grenzen
-          weight: 1.5,          // dickere Linien
-          fillColor: c,
-          fillOpacity: 0.6
-        };
-      },
-      onEachFeature: (f, layer) => {
-        const meta = coreData[f.properties.id];
-        if (meta) {
-          // Popup beim Klick
-          layer.bindPopup(`<b>${meta.name}</b>`);
-          // Tooltip beim Hover
-          layer.bindTooltip(meta.name, { permanent: false, direction: "center" });
-        } else {
-          layer.bindPopup(`ID: ${f.properties.id}`);
-        }
-      }
-    }).addTo(map);
-  });
-</script>
-</body>
-</html>
+        const c = colorMap[id] ||
