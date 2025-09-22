@@ -2,11 +2,11 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>Polygone Basic</title>
+  <title>Polygone Debug</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { margin:0; padding:0; height:100%; }
-    #map { width:100%; height:100%; }
+    #map { width:100%; height:100%; background:#fff; }
   </style>
 </head>
 <body>
@@ -17,13 +17,6 @@
   <script>
     const map = L.map('map').setView([51.2, 10.4], 6);
 
-    // Hintergrundkarte hinzufügen
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap',
-      maxZoom: 18
-    }).addTo(map);
-
-    // TopoJSON laden und als GeoJSON darstellen
     fetch("Polygone.json")
       .then(r => r.json())
       .then(topoData => {
@@ -32,11 +25,13 @@
 
         L.geoJSON(geojson, {
           style: {
-            color: "red",    // rote Umrisse
+            color: "black",
             weight: 1,
-            fill: false      // keine Füllung
+            fill: false
           }
         }).addTo(map);
+
+        map.fitBounds(L.geoJSON(geojson).getBounds());
       });
   </script>
 </body>
