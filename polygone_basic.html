@@ -1,44 +1,20 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <title>Debug Polygone</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    html, body { margin:0; padding:0; height:100%; }
-    #map { width:100%; height:100%; background:#fff; }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
+<script>
+  const map = L.map('map').setView([51.2, 10.4], 6);
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/topojson-client@3"></script>
-  <script>
-    const map = L.map('map').setView([51.2, 10.4], 6);
+  fetch("Polygone.json")
+    .then(r => r.json())
+    .then(topoData => {
+      console.log("Objekte:", Object.keys(topoData.objects));
+      const geojson = topojson.feature(topoData, topoData.objects["data"]);
+      console.log("Features:", geojson.features.length);
 
-    fetch("Polygone.json")
-      .then(r => r.json())
-      .then(topoData => {
-        console.log("Keys:", Object.keys(topoData.objects));
+      const layer = L.geoJSON(geojson, {
+        style: {
+          color: "red",
+          weight: 1
+        }
+      }).addTo(map);
 
-        // nimm das erste Objekt "data"
-        const geojson = topojson.feature(topoData, topoData.objects.data);
-        console.log("Features:", geojson.features.length);
-        console.log("Beispiel Feature:", geojson.features[0]);
-
-        // zeichne nur das erste Polygon
-        L.geoJSON(geojson.features[0], {
-          style: {
-            color: "red",
-            weight: 2,
-            fill: false
-          }
-        }).addTo(map);
-
-        map.fitBounds(L.geoJSON(geojson.features[0]).getBounds());
-      })
-      .catch(err => console.error("Fehler:", err));
-  </script>
-</body>
-</html>
+      map.fitBounds(layer.getBounds());
+    });
+</script>
