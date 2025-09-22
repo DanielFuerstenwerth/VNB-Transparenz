@@ -2,11 +2,11 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>VNB-Transparenz Karte</title>
+  <title>VNB-Polygone Test</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
-    #map { width: 100%; height: 100%; }
+    #map { width: 100%; height: 100%; background: #eef; } /* hellblauer Hintergrund */
   </style>
 </head>
 <body>
@@ -18,11 +18,6 @@
 <script>
   const map = L.map('map').setView([51.2, 10.4], 6);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende'
-  }).addTo(map);
-
   Promise.all([
     fetch("comtopojson").then(r => r.json()),
     fetch("VNB_ID").then(r => r.json()),
@@ -31,13 +26,16 @@
     const objName = Object.keys(topoData.objects)[0];
     const geojson = topojson.feature(topoData, topoData.objects[objName]);
 
-    L.geoJSON(geojson, {
+    console.log("Anzahl Features:", geojson.features.length);
+    console.log("Beispiel Feature:", geojson.features[0]);
+
+    const layer = L.geoJSON(geojson, {
       style: f => {
-        const id = f.properties.id || f.id;  // robust: falls id woanders liegt
+        const id = f.properties.id || f.id;
         const c = id && colorMap[id] ? colorMap[id] : "grey";
         return {
-          color: "#000",        // Grenzen schwarz
-          weight: 1.0,          // Linienbreite
+          color: "#000",
+          weight: 1,
           fillColor: c,
           fillOpacity: 0.6
         };
@@ -47,12 +45,14 @@
         const meta = id ? coreData[id] : null;
         if (meta) {
           layer.bindPopup(`<b>${meta.name}</b>`);
-          layer.bindTooltip(meta.name, { permanent: false, direction: "center" });
         } else if (id) {
           layer.bindPopup(`ID: ${id}`);
         }
       }
     }).addTo(map);
+
+    // auf Layer auszoomen, damit alles sichtbar wird
+    map.fitBounds(layer.getBounds());
   }).catch(err => {
     console.error("Fehler beim Laden:", err);
   });
