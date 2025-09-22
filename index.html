@@ -21,16 +21,28 @@
   fetch("Polygone.json")
     .then(r => r.json())
     .then(topoData => {
-      const objName = Object.keys(topoData.objects)[0];
-      console.log("Objekte:", Object.keys(topoData.objects));
-      const geojson = topojson.feature(topoData, topoData.objects[objName]);
+  const objName = Object.keys(topoData.objects)[0];
+  console.log("Objekte:", Object.keys(topoData.objects));
+  const geojson = topojson.feature(topoData, topoData.objects[objName]);
 
-      const layer = L.geoJSON(geojson, {
-        style: {
-          color: "#000",        // schwarze Grenzen
-          weight: 1,
-          fillColor: "#ccc",    // graue Flächen
-          fillOpacity: 0.5
+  const layer = L.geoJSON(geojson, {
+    style: {
+      color: "#000",       // schwarze Grenzen
+      weight: 1,
+      fillColor: "#ccc",   // graue Flächen
+      fillOpacity: 0.5
+    },
+    onEachFeature: (f, layer) => {
+      layer.bindPopup(`ID: ${f.id}`);
+    }
+  }).addTo(map);
+
+  // Zoom auf alle Polygone
+  if (layer.getBounds().isValid()) {
+    map.fitBounds(layer.getBounds());
+  }
+})
+
         },
         onEachFeature: (f, layer) => {
           layer.bindPopup(`ID: ${f.id}`);
