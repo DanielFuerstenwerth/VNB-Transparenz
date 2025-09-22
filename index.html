@@ -33,13 +33,12 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende'
   }).addTo(map);
 
-  // Daten laden: comtopojson (Geometrien), VNB_ID (Namen), farben.json (Farben)
+  // Daten laden
   Promise.all([
     fetch("comtopojson").then(r => r.json()),
-    fetch("VNB_ID").then(r => r.json()),
+    fetch("VNB_ID").then(r => r.json()),     // ohne Endung
     fetch("farben.json").then(r => r.json())
   ]).then(([topoData, coreData, colorMap]) => {
-    // Object-Name im TopoJSON ermitteln (z. B. "vnb")
     const objName = Object.keys(topoData.objects)[0];
     const geojson = topojson.feature(topoData, topoData.objects[objName]);
 
@@ -49,8 +48,8 @@
         const id = f.properties.id;
         const c = colorMap[id] || "grey";
         return {
-          color: "#333",
-          weight: 1,
+          color: "#000",        // schwarze Grenzen
+          weight: 1.5,          // dickere Linien
           fillColor: c,
           fillOpacity: 0.6
         };
@@ -58,7 +57,10 @@
       onEachFeature: (f, layer) => {
         const meta = coreData[f.properties.id];
         if (meta) {
+          // Popup beim Klick
           layer.bindPopup(`<b>${meta.name}</b>`);
+          // Tooltip beim Hover
+          layer.bindTooltip(meta.name, { permanent: false, direction: "center" });
         } else {
           layer.bindPopup(`ID: ${f.properties.id}`);
         }
