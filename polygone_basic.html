@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>Polygone Debug</title>
+  <title>Debug Polygone</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { margin:0; padding:0; height:100%; }
@@ -20,19 +20,25 @@
     fetch("Polygone.json")
       .then(r => r.json())
       .then(topoData => {
+        console.log("Keys:", Object.keys(topoData.objects));
+
+        // nimm das erste Objekt "data"
         const geojson = topojson.feature(topoData, topoData.objects.data);
         console.log("Features:", geojson.features.length);
+        console.log("Beispiel Feature:", geojson.features[0]);
 
-        L.geoJSON(geojson, {
+        // zeichne nur das erste Polygon
+        L.geoJSON(geojson.features[0], {
           style: {
-            color: "black",
-            weight: 1,
+            color: "red",
+            weight: 2,
             fill: false
           }
         }).addTo(map);
 
-        map.fitBounds(L.geoJSON(geojson).getBounds());
-      });
+        map.fitBounds(L.geoJSON(geojson.features[0]).getBounds());
+      })
+      .catch(err => console.error("Fehler:", err));
   </script>
 </body>
 </html>
