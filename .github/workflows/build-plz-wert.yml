@@ -13,20 +13,48 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Download CSV from Google Sheets
-        run: curl -L "https://docs.google.com/spreadsheets/d/1huo96_hM_yGc8nIZ9KMzpIPuNHfQR6uQU-NnAloHGuQ/export?format=csv" -o data/input.csv
+      - name: Download Google Sheet (VNB → Wert)
+        run: curl -L "https://docs.google.com/spreadsheets/d/1huo96_hM_yGc8nIZ9KMzpIPuNHfQR6uQU-NnAloHGuQ/export?format=csv" -o data/vnb_input.csv
 
-      - name: Convert CSV to JSON
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Convert Google Sheet + Mapping to plz_wert.json
         run: |
-          echo '{' > data/plz_wert.json
-          tail -n +2 data/input.csv | awk -F',' '{gsub(/"/, "", $1); gsub(/"/, "", $2); printf "\"%s\": %s,\n", $1, $2}' >> data/plz_wert.json
-          sed -i '$ s/,$//' data/plz_wert.json
-          echo '}' >> data/plz_wert.json
+          python3 <<EOF
+          import csv, json
+
+          # Lade Mapping: PLZ → VNB
+          with open("data/plz_vnb.json", encoding="utf-8") as f:
+              plz_vnb = json.load(f)
+
+          # Lade Tabelle: VNB → Wert
+          vnb_wert = {}
+          with open("data/vnb_input.csv", encoding="utf-8") as f:
+              reader = csv.reader(f)
+              next(reader)  # skip header
+              for row in reader:
+                  if len(row) >= 2 and row[0] and row[1]:
+                      vnb_wert[row[0].strip()] = float(row[1].strip())
+
+          # Erzeuge neues Mapping: PLZ → Wert
+          plz_wert = {}
+          for plz, vnb in plz_vnb.items():
+              if vnb in vnb_wert:
+                  plz_wert[plz] = vnb_wert[vnb]
+
+          # Speichern
+          with open("data/plz_wert.json", "w", encoding="utf-8") as f:
+              json.dump(plz_wert, f, ensure_ascii=False, indent=2)
+          EOF
 
       - name: Commit JSON file
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git add data/plz_wert.json
           git commit -m "Auto-update plz_wert.json from Google Sheets" || echo "No changes"
           git push
