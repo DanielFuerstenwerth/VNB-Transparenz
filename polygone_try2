@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<div id="map" style="height:100vh"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/topojson-client@3"></script>
+<script>
+const map=L.map('map').setView([51.2,10.4],6);
+fetch("Polygone.json").then(r=>r.json()).then(t=>{
+  const gj=topojson.feature(t,t.objects.data);
+  const layer=L.geoJSON(gj,{
+    coordsToLatLng:p=>L.latLng(p[0],p[1]),  // SWAP
+    style:{color:"#00f",weight:1,fill:false}
+  }).addTo(map);
+  const b=layer.getBounds(); console.log('bounds-swapped:',b.toBBoxString());
+  if(b.isValid()) map.fitBounds(b);
+});
+</script>
