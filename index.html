@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>VNB-Polygone</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VNB</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-    /* >>> entscheidend: volle höhe <<< */
-    html,body{height:100%;margin:0}
-    #map{height:100vh}   /* alternativ: height: 800px; */
+    html,body{margin:0;height:100%}
+    /* Vollbild – unabhängig von Elter-Styles */
+    #map{position:fixed;inset:0}
   </style>
 </head>
 <body>
@@ -16,32 +16,55 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/topojson-client@3"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 <script>
-const map = L.map('map').setView([51.2,10.4], 6); // keine Basemap
+const map = L.map('map', {zoomSnap:.25}).setView([51.2,10.4],6);
+requestAnimationFrame(()=>map.invalidateSize(true)); // falls Browser zu klein rendert
 
-const keyOf = f => {
+// --- feste Reprojektion (TopoJSON ist NICHT WGS84) ---
+const CRS_DEF = '+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs'; // EPSG:3035
+const SWAP_XY = true;   // wenn DE falsch liegt → false setzen
+
+const keyOf=f=>{
   const p=f.properties||{};
-  return (f.id ?? p.id ?? p.vnb ?? p.VNB ?? p.name ?? p.Name ?? '').toString().trim();
+  return (f.id??p.id??p.vnb??p.VNB??p.name??p.Name??'').toString().trim();
+};
+
+const layerWithProj=(gj,def,swap,style,each)=>{
+  const src=proj4(def);
+  return L.geoJSON(gj,{
+    coordsToLatLng:(pt)=>{
+      const xy=swap?[pt[1],pt[0]]:[pt[0],pt[1]];
+      const ll=proj4(src,proj4.WGS84,xy); // [lon,lat]
+      return L.latLng(ll[1],ll[0]);
+    },
+    style,onEachFeature:each
+  });
 };
 
 Promise.all([
   fetch('Polygone.json').then(r=>r.json()),
   fetch('farben.json').then(r=>r.json())
 ]).then(([topo,farben])=>{
-  const obj = Object.keys(topo.objects)[0];
-  const gj  = topojson.feature(topo, topo.objects[obj]);
+  const obj=Object.keys(topo.objects)[0];
+  const gj = topojson.feature(topo, topo.objects[obj]);
 
-  const style = f=>{
-    const v = farben[keyOf(f)];
-    return {
-      color:'#444', weight:1, fillOpacity:.45,
-      fillColor: v===undefined ? '#cccccc' : (String(v)=='1' ? '#2ecc71' : '#e74c3c')
-    };
+  let g=0,r=0,x=0;
+  const style=f=>{
+    const v=farben[keyOf(f)];
+    let fill='#ccc';
+    if(v===undefined) x++;
+    else if(String(v)=='1'){ fill='#2ecc71'; g++; }
+    else { fill='#e74c3c'; r++; }
+    return {color:'#444',weight:1,fillOpacity:.45,fillColor:fill};
   };
-  const each = (f,l)=> l.bindTooltip(keyOf(f)||'ohne ID',{sticky:true});
+  const each=(f,l)=>l.bindTooltip(keyOf(f)||'ohne ID',{sticky:true});
 
-  const layer = L.geoJSON(gj,{style,onEachFeature:each}).addTo(map);
-  map.fitBounds(layer.getBounds(),{padding:[8,8]});
+  const layer = layerWithProj(gj, CRS_DEF, SWAP_XY, style, each).addTo(map);
+  const b = layer.getBounds();
+  console.log('map size', document.getElementById('map').clientWidth, document.getElementById('map').clientHeight);
+  console.log('bounds', b.toBBoxString(), 'green', g, 'red', r, 'unknown', x);
+  map.fitBounds(b,{padding:[8,8]});
 }).catch(e=>{console.error(e); alert('Ladefehler');});
 </script>
 </body>
