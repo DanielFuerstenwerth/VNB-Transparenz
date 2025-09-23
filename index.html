@@ -2,87 +2,120 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>VNB-Polygone – Farbtest</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Leaflet -->
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VNB-Polygone (farben)</title>
+
+  <!-- Leaflet (nur Vektoren, keine Basemap) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- TopoJSON → GeoJSON -->
+
+  <!-- TopoJSON -->
   <script src="https://unpkg.com/topojson-client@3"></script>
+
+  <!-- Reprojektion -->
+  <script src="https://cdn.jsdelivr.net/npm/proj4@2.9.2/dist/proj4.js"></script>
+  <script src="https://unpkg.com/proj4leaflet@1.0.2/src/proj4leaflet.js"></script>
+
   <style>
-    html, body, #map { height: 100%; margin: 0; }
-    /* leichte „Papierfarbe“, damit weiße Füllungen erkennbar sind */
-    #map { background: #eef1f5; }
-    .vnb-poly { stroke: #333; stroke-width: 1; fill-opacity: 0.75; }
-    .vnb-poly:hover { stroke-width: 2; }
+    html,body {height:100%;margin:0}
+    #map{height:100%;width:100%;background:#f7f7f7}
+    .leaflet-container{font:14px/1.4 system-ui, sans-serif}
   </style>
 </head>
 <body>
-<div id="map"></div>
+  <div id="map"></div>
 
-<script>
-(async function () {
-  // 1) Karte ohne Basemap
-  const map = L.map('map', { zoomControl: true });
-  // neutraler Start: Deutschland grob – wird gleich via fitBounds gesetzt
-  map.setView([51.2, 10.4], 6);
+  <script>
+  // ---------------- helpers ----------------
+  async function loadJSON(url){
+    const r = await fetch(url + '?v=' + Date.now(), {cache:'no-cache'});
+    if(!r.ok) throw new Error(url+' HTTP '+r.status);
+    const t = await r.text();
+    try{ return JSON.parse(t); }
+    catch(e){ console.error('Bad JSON in', url, '\n', t.slice(0,200)); throw e; }
+  }
 
-  // 2) Daten laden (Pfadnamen ggf. anpassen)
-  const [topo, farben] = await Promise.all([
-    fetch('Polygone_ID.json').then(r => r.json()),
-    fetch('farben.json').then(r => r.json())
-  ]);
-
-  // 3) TopoJSON → GeoJSON
-  //    Das Objekt heißt im TopoJSON "data" (FeatureCollection mit feature.id)
-  const fc = topojson.feature(topo, topo.objects.data); // GeoJSON FeatureCollection
-
-  // 4) Style-Funktion basierend auf feature.id (Fallback: properties.id)
-  const getId = f => (f.id != null ? String(f.id) : String(f.properties?.id ?? ''));
-  const getColor = id => farben[id] || '#cccccc'; // unbekannt: hellgrau
-
-  const layer = L.geoJSON(fc, {
-    style: feature => ({
-      className: 'vnb-poly',
-      color: '#333',
-      weight: 1,
-      fillColor: getColor(getId(feature)),
-      fillOpacity: 0.75
-    }),
-    onEachFeature: (feature, l) => {
-      const id = getId(feature);
-      l.bindTooltip(`ID: ${id} | Farbe: ${getColor(id)}`, {sticky: true});
+  function anyBigCoordinate(coords){
+    if (typeof coords[0] === 'number'){
+      const x = coords[0], y = coords[1];
+      return Math.abs(x) > 180 || Math.abs(y) > 90; // Grad-Bereich
     }
-  }).addTo(map);
-
-  // 5) Karte passend zoomen
-  try {
-    map.fitBounds(layer.getBounds(), { padding: [10, 10] });
-  } catch (e) {
-    console.warn('fitBounds nicht möglich – ggf. keine Features?', e);
+    return coords.some(anyBigCoordinate);
   }
 
-  // 6) Diagnose: Abgleich IDs in Karte vs. farben.json
-  const featureIds = new Set(fc.features.map(getId));
-  const colorIds   = new Set(Object.keys(farben));
-
-  let matched = 0, onlyInMap = 0, onlyInColors = 0;
-  for (const id of featureIds) {
-    if (colorIds.has(id)) matched++; else onlyInMap++;
-  }
-  for (const id of colorIds) {
-    if (!featureIds.has(id)) onlyInColors++;
+  function reprojInPlace_3857_to_4326(coords){
+    if (typeof coords[0] === 'number'){
+      const p = proj4('EPSG:3857','EPSG:4326', coords);
+      coords[0]=p[0]; coords[1]=p[1];
+      return;
+    }
+    for (let i=0;i<coords.length;i++) reprojInPlace_3857_to_4326(coords[i]);
   }
 
-  console.log('✅ GeoJSON-Features:', fc.features.length);
-  console.log('🎨 farben.json Keys:', colorIds.size);
-  console.log('🔗 ID-Matches:', matched);
-  console.log('🗺️  Nur in Polygone_ID.json (keine Farbe):', onlyInMap);
-  console.log('🧾 Nur in farben.json (kein Polygon):', onlyInColors);
+  function ensureWGS84(geojson){
+    const f0 = geojson.features && geojson.features[0];
+    if (!f0) return;
+    if (anyBigCoordinate(f0.geometry.coordinates)){
+      console.log('Reprojekt: EPSG:3857 → EPSG:4326');
+      geojson.features.forEach(f => reprojInPlace_3857_to_4326(f.geometry.coordinates));
+    } else {
+      console.log('Koordinaten bereits in WGS84 (Grad).');
+    }
+  }
 
-  // ein paar Beispiele
-  console.log('Beispiel-Feature-ID:', getId(fc.features[0]));
-})();
-</script>
+  // ---------------- main ----------------
+  (async () => {
+    const map = L.map('map', { attributionControl:false }).setView([51.2,10.4], 6);
+
+    const [topo, farben] = await Promise.all([
+      loadJSON('Polygone_ID.json'),
+      loadJSON('farben.json')
+    ]);
+
+    const objName = Object.keys(topo.objects)[0] || 'data';
+    const geojson = topojson.feature(topo, topo.objects[objName]);
+
+    ensureWGS84(geojson);
+
+    // Farbzuordnung (Keys als String)
+    const colorMap = new Map(
+      Object.entries(farben).map(([k,v]) => [String(k), (typeof v==='string'? v : v?.color || '#aaaaaa')])
+    );
+
+    let matches=0, onlyPoly=0;
+    const layer = L.geoJSON(geojson, {
+      style: f => {
+        const id = String(f.id ?? f.properties?.id ?? '');
+        const c  = colorMap.get(id);
+        if (c) matches++; else onlyPoly++;
+        return {
+          color:'#222', weight:0.8, opacity:1,
+          fillColor: c || '#d9d9d9',
+          fillOpacity: c ? 0.9 : 0.4
+        };
+      },
+      onEachFeature: (f,l) => {
+        const id = String(f.id ?? f.properties?.id ?? '');
+        l.bindTooltip('ID: '+id, {sticky:true, direction:'auto'});
+        l.on('mouseover',()=>l.setStyle({weight:2}));
+        l.on('mouseout', ()=>l.setStyle({weight:0.8}));
+      }
+    }).addTo(map);
+
+    try{ map.fitBounds(layer.getBounds(), {padding:[16,16]}); }catch(_){}
+
+    // Debug
+    const total = geojson.features.length;
+    console.log('GeoJSON-Features:', total);
+    console.log('farben.json Keys:', colorMap.size);
+    console.log('ID-Matches:', matches);
+    console.log('Nur in Polygone_ID.json (keine Farbe):', onlyPoly);
+    console.log('Nur in farben.json (kein Polygon):', Math.max(0, colorMap.size - matches));
+    console.log('Beispiel-Feature-ID:', String(geojson.features[0]?.id ?? geojson.features[0]?.properties?.id ?? '—'));
+  })().catch(e=>{
+    console.error(e);
+    alert('Fehler: '+e.message);
+  });
+  </script>
 </body>
 </html>
