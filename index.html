@@ -1,57 +1,76 @@
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/topojson-client@3"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
-<script>
-const map = L.map('map').setView([51.2,10.4], 6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VNB-Polygone</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+  </style>
+</head>
+<body>
+  <!-- WICHTIG: Map-Container -->
+  <div id="map"></div>
 
-/* >>> HART FESTLEGEN <<< 
-   zuerst 3035 + swapXY=true testen; falls noch falsch, swapXY auf false ändern.
-*/
-const CRS_SELECTED = {
-  name: 'EPSG:3035',
-  def:  '+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs',
-  swapXY: true   // <- bei Bedarf auf false setzen
-};
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/topojson-client@3"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 
-function layerWithProj(gj, def, swapXY, styleFn, eachFn){
-  const src = proj4(def);
-  return L.geoJSON(gj,{
-    coordsToLatLng: (p)=>{
-      const xy = swapXY ? [p[1],p[0]] : [p[0],p[1]];
-      const ll = proj4(src, proj4.WGS84, xy);   // [lon,lat]
-      return L.latLng(ll[1], ll[0]);
-    },
-    style: styleFn,
-    onEachFeature: eachFn
-  });
-}
+  <script>
+  // erst starten, wenn DOM da ist
+  window.addEventListener('DOMContentLoaded', async () => {
+    const map = L.map('map').setView([51.2, 10.4], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap', maxZoom: 19
+    }).addTo(map);
 
-Promise.all([
-  fetch('Polygone.json').then(r=>r.json()),
-  fetch('farben.json').then(r=>r.json())
-]).then(([topo, farben])=>{
-  const obj = Object.keys(topo.objects)[0];          // z.B. "data"
-  const gj  = topojson.feature(topo, topo.objects[obj]);
-
-  const keyOf = f => {
-    const p = f.properties||{};
-    return f.id ?? p.id ?? p.vnb ?? p.VNB ?? p.name ?? p.Name;
-  };
-
-  const styleFn = f => {
-    const v = farben[keyOf(f)];
-    return {
-      color:'#000', weight:1, fillOpacity:.35,
-      fillColor: v===undefined ? '#cccccc' : (String(v)=='1' ? '#2ecc71' : '#e74c3c')
+    // Festes Eingabe-CRS (ggf. swapXY umschalten)
+    const CRS_SELECTED = {
+      name: 'EPSG:3035',
+      def:  '+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs',
+      swapXY: true     // falls DE falsch liegt: auf false setzen und neu laden
     };
-  };
 
-  const eachFn = (f,l)=> l.bindTooltip(String(keyOf(f)??'ohne ID'),{sticky:true});
+    const keyOf = (f) => {
+      const p = f.properties || {};
+      return f.id ?? p.id ?? p.vnb ?? p.VNB ?? p.name ?? p.Name;
+    };
 
-  const layer = layerWithProj(gj, CRS_SELECTED.def, CRS_SELECTED.swapXY, styleFn, eachFn);
-  layer.addTo(map);
-  map.fitBounds(layer.getBounds());
-  console.log('CRS fest:', CRS_SELECTED.name, 'swapXY:', CRS_SELECTED.swapXY);
-}).catch(console.error);
-</script>
+    const layerWithProj = (gj, def, swapXY, styleFn, eachFn) => {
+      const src = proj4(def);
+      return L.geoJSON(gj, {
+        coordsToLatLng: (pt) => {
+          const xy = swapXY ? [pt[1], pt[0]] : [pt[0], pt[1]];
+          const ll = proj4(src, proj4.WGS84, xy);   // [lon, lat]
+          return L.latLng(ll[1], ll[0]);
+        },
+        style: styleFn,
+        onEachFeature: eachFn
+      });
+    };
+
+    // Daten laden
+    const topo = await fetch('Polygone.json').then(r => r.json());
+    const farben = await fetch('farben.json').then(r => r.json());
+    const objName = Object.keys(topo.objects)[0];
+    const gj = topojson.feature(topo, topo.objects[objName]);
+
+    // Farben: 1=grün, sonst rot, fehlend=grau
+    const styleFn = (f) => {
+      const v = farben[keyOf(f)];
+      return {
+        color: '#000', weight: 1, fillOpacity: .35,
+        fillColor: v === undefined ? '#cccccc' : (String(v) === '1' ? '#2ecc71' : '#e74c3c')
+      };
+    };
+    const eachFn = (f, l) => l.bindTooltip(String(keyOf(f) ?? 'ohne ID'), { sticky: true });
+
+    const layer = layerWithProj(gj, CRS_SELECTED.def, CRS_SELECTED.swapXY, styleFn, eachFn);
+    layer.addTo(map);
+    map.fitBounds(layer.getBounds());
+    console.log('CRS fest:', CRS_SELECTED.name, 'swapXY:', CRS_SELECTED.swapXY);
+  });
+  </script>
+</body>
+</html>
