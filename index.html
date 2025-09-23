@@ -21,10 +21,6 @@
 const map = L.map('map', {zoomSnap:.25}).setView([51.2,10.4],6);
 requestAnimationFrame(()=>map.invalidateSize(true)); // falls Browser zu klein rendert
 
-// --- feste Reprojektion (TopoJSON ist NICHT WGS84) ---
-const CRS_DEF = '+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs'; // 3035
-const SWAP_XY = false;   // wenn DE falsch liegt → false setzen
-
 const keyOf=f=>{
   const p=f.properties||{};
   return (f.id??p.id??p.vnb??p.VNB??p.name??p.Name??'').toString().trim();
