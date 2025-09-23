@@ -1,35 +1,14 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <title>VNB Polygone – Simple CRS</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <style>
-    html,body,#map{height:100%;margin:0}
-    #map{background:#fff}
-  </style>
-</head>
-<body>
-<div id="map"></div>
-
+<!doctype html><meta charset="utf-8">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<div id="map" style="height:100vh"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/topojson-client@3"></script>
 <script>
-  // wichtig: Simple-CRS (keine Geo-Koordinaten erwartet)
-  const map = L.map('map', { crs: L.CRS.Simple });
-
-  fetch('Polygone.json').then(r=>r.json()).then(topo=>{
-    const gj = topojson.feature(topo, topo.objects.data);
-    console.log('Features:', gj.features.length);
-
-    const layer = L.geoJSON(gj, {
-      style:{color:'red',weight:1,fill:false}
-    }).addTo(map);
-
-    // auf extent der daten zoomen
-    const b = layer.getBounds();
-    if (b.isValid()) map.fitBounds(b);
-  });
+const map=L.map('map').setView([51.2,10.4],6);
+fetch("Polygone.json").then(r=>r.json()).then(t=>{
+  const gj=topojson.feature(t,t.objects.data);
+  const layer=L.geoJSON(gj,{style:{color:"#f00",weight:1,fill:false}}).addTo(map);
+  const b=layer.getBounds(); console.log('bounds:',b.toBBoxString());
+  if(b.isValid()) map.fitBounds(b); else console.warn('bounds invalid');
+});
 </script>
-</body>
-</html>
