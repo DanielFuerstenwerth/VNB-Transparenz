@@ -1,79 +1,87 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>VNB-Polygone (D3, ohne Basemap)</title>
-
-  <!-- D3 + topojson (nur diese zwei) -->
-  <script src="https://unpkg.com/d3@7"></script>
+  <title>VNB-Polygone – Farbtest</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- TopoJSON → GeoJSON -->
   <script src="https://unpkg.com/topojson-client@3"></script>
-
   <style>
-    html,body {height:100%; margin:0;}
-    #wrap {height:100%; display:flex; flex-direction:column;}
-    #map {flex:1; background:#f4f4f8;}
-    svg {width:100%; height:100%; display:block;}
-    .vnb { stroke:#222; stroke-width:0.4; fill-opacity:0.9; }
-    .vnb:hover { stroke:#000; stroke-width:0.8; }
-    #legend{padding:6px 10px; font:14px system-ui,Segoe UI,Roboto,Arial,sans-serif;}
-    .chip{display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:middle;}
+    html, body, #map { height: 100%; margin: 0; }
+    /* leichte „Papierfarbe“, damit weiße Füllungen erkennbar sind */
+    #map { background: #eef1f5; }
+    .vnb-poly { stroke: #333; stroke-width: 1; fill-opacity: 0.75; }
+    .vnb-poly:hover { stroke-width: 2; }
   </style>
 </head>
 <body>
-<div id="wrap">
-  <div id="legend">
-    <span class="chip" style="background:#19a04b"></span> Wert = 1 (grün) &nbsp;&nbsp;
-    <span class="chip" style="background:#d94b4b"></span> sonst (rot)
-  </div>
-  <div id="map"></div>
-</div>
+<div id="map"></div>
 
 <script>
 (async function () {
-  const container = document.getElementById('map');
+  // 1) Karte ohne Basemap
+  const map = L.map('map', { zoomControl: true });
+  // neutraler Start: Deutschland grob – wird gleich via fitBounds gesetzt
+  map.setView([51.2, 10.4], 6);
 
-  // 1) Daten laden (Dateinamen exakt!)
-  const topo = await fetch('Polygone.json').then(r => r.json());
-  const colors = await fetch('farben.json').then(r => r.json()); // { "id": "1"|"0", ... }
+  // 2) Daten laden (Pfadnamen ggf. anpassen)
+  const [topo, farben] = await Promise.all([
+    fetch('Polygone_ID.json').then(r => r.json()),
+    fetch('farben.json').then(r => r.json())
+  ]);
 
-  // TopoJSON -> GeoJSON (Objektnamen: erstes Objekt nehmen)
-  const objName = Object.keys(topo.objects)[0];
-  const geo = topojson.feature(topo, topo.objects[objName]); // Multi/Polygon-Features
-  console.log('Features:', geo.features.length);
+  // 3) TopoJSON → GeoJSON
+  //    Das Objekt heißt im TopoJSON "data" (FeatureCollection mit feature.id)
+  const fc = topojson.feature(topo, topo.objects.data); // GeoJSON FeatureCollection
 
-  // 2) SVG anlegen
-  const w = container.clientWidth || 1200;
-  const h = container.clientHeight || 800;
-  const svg = d3.select(container).append('svg')
-                .attr('viewBox', `0 0 ${w} ${h}`)
-                .attr('preserveAspectRatio','xMidYMid meet');
+  // 4) Style-Funktion basierend auf feature.id (Fallback: properties.id)
+  const getId = f => (f.id != null ? String(f.id) : String(f.properties?.id ?? ''));
+  const getColor = id => farben[id] || '#cccccc'; // unbekannt: hellgrau
 
-  // 3) Projektion: Identität (Topo-Koordinaten), y spiegeln, auf SVG einpassen
-  const proj = d3.geoIdentity().reflectY(true);
-  const path = d3.geoPath(proj);
+  const layer = L.geoJSON(fc, {
+    style: feature => ({
+      className: 'vnb-poly',
+      color: '#333',
+      weight: 1,
+      fillColor: getColor(getId(feature)),
+      fillOpacity: 0.75
+    }),
+    onEachFeature: (feature, l) => {
+      const id = getId(feature);
+      l.bindTooltip(`ID: ${id} | Farbe: ${getColor(id)}`, {sticky: true});
+    }
+  }).addTo(map);
 
-  // automatische Skalierung/Translation auf den verfügbaren SVG-Raum:
-  proj.fitSize([w, h], geo);
+  // 5) Karte passend zoomen
+  try {
+    map.fitBounds(layer.getBounds(), { padding: [10, 10] });
+  } catch (e) {
+    console.warn('fitBounds nicht möglich – ggf. keine Features?', e);
+  }
 
-  // 4) Farbskala: "1" -> grün, sonst rot
-  const colorFor = (id) => (colors[id] === "1" || colors[id] === 1) ? '#19a04b' : '#d94b4b';
+  // 6) Diagnose: Abgleich IDs in Karte vs. farben.json
+  const featureIds = new Set(fc.features.map(getId));
+  const colorIds   = new Set(Object.keys(farben));
 
-  // 5) Zeichnen
-  svg.append('g')
-     .selectAll('path')
-     .data(geo.features)
-     .join('path')
-     .attr('class','vnb')
-     .attr('d', path)
-     .attr('fill', d => colorFor(d.id ?? d.properties?.id))
-     .append('title')
-     .text(d => `VNB-ID: ${d.id ?? d.properties?.id}`);
+  let matched = 0, onlyInMap = 0, onlyInColors = 0;
+  for (const id of featureIds) {
+    if (colorIds.has(id)) matched++; else onlyInMap++;
+  }
+  for (const id of colorIds) {
+    if (!featureIds.has(id)) onlyInColors++;
+  }
 
-  // optional: Bounding-Box anzeigen
-  const b = path.bounds(geo);
-  console.log('Bounds (Topo-Koordinaten, projiziert):', b);
+  console.log('✅ GeoJSON-Features:', fc.features.length);
+  console.log('🎨 farben.json Keys:', colorIds.size);
+  console.log('🔗 ID-Matches:', matched);
+  console.log('🗺️  Nur in Polygone_ID.json (keine Farbe):', onlyInMap);
+  console.log('🧾 Nur in farben.json (kein Polygon):', onlyInColors);
 
+  // ein paar Beispiele
+  console.log('Beispiel-Feature-ID:', getId(fc.features[0]));
 })();
 </script>
 </body>
