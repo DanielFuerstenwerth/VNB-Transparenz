@@ -15,29 +15,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-
-      - name: Debug env
-        run: |
-          node -v
-          npm -v
-          ls -la
 
       - name: Check input
         run: |
           test -f Polygone.json || { echo "ERROR: Polygone.json nicht gefunden"; exit 1; }
           wc -c Polygone.json
 
-      # mapshaper ohne Installation direkt via npx
-      - name: Reproject to WGS84
+      - name: Reproject to WGS84 (assume EPSG:3857)
         run: |
           npx -y mapshaper -version
-          npx -y mapshaper -i Polygone.json encoding=utf8 \
+          npx -y mapshaper -i Polygone.json encoding=utf8 crs=EPSG:3857 \
             -proj wgs84 \
             -o format=topojson id-field=id precision=0.000001 Polygone_wgs84.json
           wc -c Polygone_wgs84.json
-          head -c 200 Polygone_wgs84.json | tr -d '\n' && echo
 
       - name: Commit result
         run: |
