@@ -6,8 +6,9 @@
   <title>VNB-Polygone</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-    html,body,#map{height:100%;margin:0;background:#f6f6f6}
-    .leaflet-container{background:#f6f6f6}
+    /* >>> entscheidend: volle höhe <<< */
+    html,body{height:100%;margin:0}
+    #map{height:100vh}   /* alternativ: height: 800px; */
   </style>
 </head>
 <body>
@@ -28,7 +29,7 @@ Promise.all([
   fetch('farben.json').then(r=>r.json())
 ]).then(([topo,farben])=>{
   const obj = Object.keys(topo.objects)[0];
-  const gj  = topojson.feature(topo, topo.objects[obj]); // direkt als GeoJSON
+  const gj  = topojson.feature(topo, topo.objects[obj]);
 
   const style = f=>{
     const v = farben[keyOf(f)];
