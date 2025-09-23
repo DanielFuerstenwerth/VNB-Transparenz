@@ -1,67 +1,80 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>VNB</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VNB-Polygone (D3, ohne Basemap)</title>
+
+  <!-- D3 + topojson (nur diese zwei) -->
+  <script src="https://unpkg.com/d3@7"></script>
+  <script src="https://unpkg.com/topojson-client@3"></script>
+
   <style>
-    html,body{margin:0;height:100%}
-    /* Vollbild – unabhängig von Elter-Styles */
-    #map{position:fixed;inset:0}
+    html,body {height:100%; margin:0;}
+    #wrap {height:100%; display:flex; flex-direction:column;}
+    #map {flex:1; background:#f4f4f8;}
+    svg {width:100%; height:100%; display:block;}
+    .vnb { stroke:#222; stroke-width:0.4; fill-opacity:0.9; }
+    .vnb:hover { stroke:#000; stroke-width:0.8; }
+    #legend{padding:6px 10px; font:14px system-ui,Segoe UI,Roboto,Arial,sans-serif;}
+    .chip{display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:middle;}
   </style>
 </head>
 <body>
-<div id="map"></div>
+<div id="wrap">
+  <div id="legend">
+    <span class="chip" style="background:#19a04b"></span> Wert = 1 (grün) &nbsp;&nbsp;
+    <span class="chip" style="background:#d94b4b"></span> sonst (rot)
+  </div>
+  <div id="map"></div>
+</div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/topojson-client@3"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 <script>
-const map = L.map('map', {zoomSnap:.25}).setView([51.2,10.4],6);
-requestAnimationFrame(()=>map.invalidateSize(true)); // falls Browser zu klein rendert
+(async function () {
+  const container = document.getElementById('map');
 
-const keyOf=f=>{
-  const p=f.properties||{};
-  return (f.id??p.id??p.vnb??p.VNB??p.name??p.Name??'').toString().trim();
-};
+  // 1) Daten laden (Dateinamen exakt!)
+  const topo = await fetch('Polygone.json').then(r => r.json());
+  const colors = await fetch('farben.json').then(r => r.json()); // { "id": "1"|"0", ... }
 
-const layerWithProj=(gj,def,swap,style,each)=>{
-  const src=proj4(def);
-  return L.geoJSON(gj,{
-    coordsToLatLng:(pt)=>{
-      const xy=swap?[pt[1],pt[0]]:[pt[0],pt[1]];
-      const ll=proj4(src,proj4.WGS84,xy); // [lon,lat]
-      return L.latLng(ll[1],ll[0]);
-    },
-    style,onEachFeature:each
-  });
-};
+  // TopoJSON -> GeoJSON (Objektnamen: erstes Objekt nehmen)
+  const objName = Object.keys(topo.objects)[0];
+  const geo = topojson.feature(topo, topo.objects[objName]); // Multi/Polygon-Features
+  console.log('Features:', geo.features.length);
 
-Promise.all([
-  fetch('Polygone.json').then(r=>r.json()),
-  fetch('farben.json').then(r=>r.json())
-]).then(([topo,farben])=>{
-  const obj=Object.keys(topo.objects)[0];
-  const gj = topojson.feature(topo, topo.objects[obj]);
+  // 2) SVG anlegen
+  const w = container.clientWidth || 1200;
+  const h = container.clientHeight || 800;
+  const svg = d3.select(container).append('svg')
+                .attr('viewBox', `0 0 ${w} ${h}`)
+                .attr('preserveAspectRatio','xMidYMid meet');
 
-  let g=0,r=0,x=0;
-  const style=f=>{
-    const v=farben[keyOf(f)];
-    let fill='#ccc';
-    if(v===undefined) x++;
-    else if(String(v)=='1'){ fill='#2ecc71'; g++; }
-    else { fill='#e74c3c'; r++; }
-    return {color:'#444',weight:1,fillOpacity:.45,fillColor:fill};
-  };
-  const each=(f,l)=>l.bindTooltip(keyOf(f)||'ohne ID',{sticky:true});
+  // 3) Projektion: Identität (Topo-Koordinaten), y spiegeln, auf SVG einpassen
+  const proj = d3.geoIdentity().reflectY(true);
+  const path = d3.geoPath(proj);
 
-  const layer = layerWithProj(gj, CRS_DEF, SWAP_XY, style, each).addTo(map);
-  const b = layer.getBounds();
-  console.log('map size', document.getElementById('map').clientWidth, document.getElementById('map').clientHeight);
-  console.log('bounds', b.toBBoxString(), 'green', g, 'red', r, 'unknown', x);
-  map.fitBounds(b,{padding:[8,8]});
-}).catch(e=>{console.error(e); alert('Ladefehler');});
+  // automatische Skalierung/Translation auf den verfügbaren SVG-Raum:
+  proj.fitSize([w, h], geo);
+
+  // 4) Farbskala: "1" -> grün, sonst rot
+  const colorFor = (id) => (colors[id] === "1" || colors[id] === 1) ? '#19a04b' : '#d94b4b';
+
+  // 5) Zeichnen
+  svg.append('g')
+     .selectAll('path')
+     .data(geo.features)
+     .join('path')
+     .attr('class','vnb')
+     .attr('d', path)
+     .attr('fill', d => colorFor(d.id ?? d.properties?.id))
+     .append('title')
+     .text(d => `VNB-ID: ${d.id ?? d.properties?.id}`);
+
+  // optional: Bounding-Box anzeigen
+  const b = path.bounds(geo);
+  console.log('Bounds (Topo-Koordinaten, projiziert):', b);
+
+})();
 </script>
 </body>
 </html>
