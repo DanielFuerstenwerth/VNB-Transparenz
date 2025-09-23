@@ -15,16 +15,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-      - run: npm i -g mapshaper
+
+      # Debug: Umgebung + Dateien anzeigen
+      - name: Debug env
+        run: |
+          node -v
+          npm -v
+          ls -la
+
+      # Mapshaper installieren + prüfen
+      - name: Install mapshaper
+        run: |
+          npm i -g mapshaper@0.6.115
+          mapshaper -version
+
+      # Sicherstellen, dass die Eingabedatei existiert (ggf. Pfad anpassen)
+      - name: Check input
+        run: |
+          test -f Polygone.json || { echo "ERROR: Polygone.json nicht gefunden"; exit 1; }
+          wc -c Polygone.json
+
+      # Reprojektieren nach WGS84 (TopoJSON -> TopoJSON)
       - name: Reproject
-        run: mapshaper -i Polygone.json -proj wgs84 \
-             -o format=topojson id-field=id precision=0.000001 Polygone_wgs84.json
+        shell: bash
+        run: |
+          mapshaper -i Polygone.json encoding=utf8 \
+            -proj wgs84 \
+            -o format=topojson id-field=id precision=0.000001 Polygone_wgs84.json
+          wc -c Polygone_wgs84.json
+          head -c 200 Polygone_wgs84.json | tr -d '\n' && echo
+
+      # Nur committen, wenn Datei sich geändert hat
       - name: Commit result
         run: |
-          if git diff --quiet -- Polygone_wgs84.json; then
-            echo "no changes"; exit 0; fi
+          git status --porcelain
+          git diff --quiet -- Polygone_wgs84.json && { echo "no changes"; exit 0; }
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add Polygone_wgs84.json
