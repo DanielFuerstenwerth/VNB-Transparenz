@@ -1,20 +1,70 @@
-<script>
-  const map = L.map('map').setView([51.2, 10.4], 6);
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>VNB Polygone Basic</title>
 
-  fetch("Polygone.json")
-    .then(r => r.json())
-    .then(topoData => {
-      console.log("Objekte:", Object.keys(topoData.objects));
-      const geojson = topojson.feature(topoData, topoData.objects["data"]);
-      console.log("Features:", geojson.features.length);
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha512-sA+z0ymA3H5wvz1mBz8Tt8HgNv1A+f5z3uE4JcT2aPd9BnI4nLgJbU5vi1QwHjG3rG1z4nxu1v9Og5R5G72zQw=="
+    crossorigin=""
+  />
 
-      const layer = L.geoJSON(geojson, {
-        style: {
-          color: "red",
-          weight: 1
-        }
-      }).addTo(map);
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #eee;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
 
-      map.fitBounds(layer.getBounds());
-    });
-</script>
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha512-vI1uQH2tKpGcxrT5xw7z9eC/E6VsJ7F9M0xiAbp+X5+u7Zr0F8CAoDgrqsmWwZP3D1+oXJRi3cwDwVVHtGZf3A=="
+    crossorigin="">
+  </script>
+
+  <!-- TopoJSON -->
+  <script src="https://unpkg.com/topojson-client@3"></script>
+
+  <script>
+    // Karte initialisieren
+    const map = L.map('map').setView([51.2, 10.4], 6);
+
+    // Polygone laden
+    fetch("Polygone.json")
+      .then(r => r.json())
+      .then(topoData => {
+        console.log("Objekte:", Object.keys(topoData.objects));
+
+        // TopoJSON → GeoJSON
+        const geojson = topojson.feature(topoData, topoData.objects.data);
+        console.log("Features:", geojson.features.length);
+
+        // GeoJSON in Karte rendern
+        const layer = L.geoJSON(geojson, {
+          style: {
+            color: "red",
+            weight: 1,
+            fillOpacity: 0.05
+          }
+        }).addTo(map);
+
+        // Automatisch auf die Daten zoomen
+        map.fitBounds(layer.getBounds());
+      });
+  </script>
+</body>
+</html>
