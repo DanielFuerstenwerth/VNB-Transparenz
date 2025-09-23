@@ -2,45 +2,34 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>VNB Polygone Basic</title>
-
-  <!-- Leaflet CSS -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
-
+  <title>VNB Polygone – Simple CRS</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
-    #map { width: 100%; height: 100%; background: #eee; }
+    html,body,#map{height:100%;margin:0}
+    #map{background:#fff}
   </style>
 </head>
 <body>
-  <div id="map"></div>
+<div id="map"></div>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/topojson-client@3"></script>
+<script>
+  // wichtig: Simple-CRS (keine Geo-Koordinaten erwartet)
+  const map = L.map('map', { crs: L.CRS.Simple });
 
-  <!-- TopoJSON -->
-  <script src="https://unpkg.com/topojson-client@3"></script>
+  fetch('Polygone.json').then(r=>r.json()).then(topo=>{
+    const gj = topojson.feature(topo, topo.objects.data);
+    console.log('Features:', gj.features.length);
 
-  <script>
-    const map = L.map('map').setView([51.2, 10.4], 6);
+    const layer = L.geoJSON(gj, {
+      style:{color:'red',weight:1,fill:false}
+    }).addTo(map);
 
-    fetch("Polygone.json")
-      .then(r => r.json())
-      .then(topoData => {
-        console.log("Objekte:", Object.keys(topoData.objects));
-
-        const geojson = topojson.feature(topoData, topoData.objects["data"]);
-        console.log("Features:", geojson.features.length);
-
-        const layer = L.geoJSON(geojson, {
-          style: { color: "red", weight: 1, fillOpacity: 0.05 }
-        }).addTo(map);
-
-        map.fitBounds(layer.getBounds());
-      });
-  </script>
+    // auf extent der daten zoomen
+    const b = layer.getBounds();
+    if (b.isValid()) map.fitBounds(b);
+  });
+</script>
 </body>
 </html>
