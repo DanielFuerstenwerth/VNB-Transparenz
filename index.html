@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>VNB-Polygone (Auto-CRS)</title>
+  <title>VNB-Polygone</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>html,body,#map{height:100%;margin:0}</style>
@@ -15,48 +15,76 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 <script>
 const map=L.map('map').setView([51.2,10.4],6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
 
-// Kandidaten-CRS
+// grobe DE-Box zur CRS-Wahl
+const DE={minLon:4.5,maxLon:16.5,minLat:46.5,maxLat:56.5};
+const inDE=b=>b&&b.isValid()&&(()=>{const [w,s,e,n]=b.toBBoxString().split(',').map(Number);
+  const x=(w+e)/2,y=(s+n)/2;return x>DE.minLon&&x<DE.maxLon&&y>DE.minLat&&y<DE.maxLat;})();
+
+// mögliche Eingabe-CRS
 const CRSs=[
   {name:'EPSG:3857',def:'+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +type=crs'},
   {name:'EPSG:3035',def:'+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs'},
   {name:'EPSG:3034',def:'+proj=lcc +lat_1=35 +lat_2=65 +lat_0=52 +lon_0=10 +x_0=4000000 +y_0=2800000 +ellps=GRS80 +units=m +no_defs +type=crs'}
 ];
 
-// Deutschland-BBOX (grob)
-const DE={minLon:4.5,maxLon:16.5,minLat:46.5,maxLat:56.5};
-const inDE=b=>b&&b.isValid()&&(()=>{const [w,s,e,n]=b.toBBoxString().split(',').map(Number);const x=(w+e)/2,y=(s+n)/2;return x>DE.minLon&&x<DE.maxLon&&y>DE.minLat&&y<DE.maxLat;})();
-
-function layerWithProj(gj,def,swap=false){
+// GeoJSON-Layer mit Projektion
+const layerWithProj=(gj,def,swap=false,styleFn,eachFeature)=>{
   const src=proj4(def);
   return L.geoJSON(gj,{
     coordsToLatLng:p=>{
       const xy=swap?[p[1],p[0]]:[p[0],p[1]];
-      const ll=proj4(src,proj4.WGS84,xy); // [lon,lat]
+      const ll=proj4(src,proj4.WGS84,xy);   // [lon,lat]
       return L.latLng(ll[1],ll[0]);
     },
-    style:{color:'#000',weight:1,fillOpacity:.3}
+    style: styleFn,
+    onEachFeature: eachFeature
   });
-}
+};
 
-fetch('Polygone.json').then(r=>r.json()).then(t=>{
-  const obj=Object.keys(t.objects)[0];       // meist "data"
-  const gj=topojson.feature(t,t.objects[obj]);
+// lade daten
+Promise.all([
+  fetch('Polygone.json').then(r=>{if(!r.ok)throw new Error('Polygone.json '+r.status);return r.json();}),
+  fetch('farben.json').then(r=>{if(!r.ok)throw new Error('farben.json '+r.status);return r.json();})
+]).then(([topo,farben])=>{
+  const obj=Object.keys(topo.objects)[0];      // meist "data"
+  const gj=topojson.feature(topo,topo.objects[obj]);
 
-  const tries=[];
-  for(const c of CRSs){ tries.push({c,swap:false}); tries.push({c,swap:true}); }
+  // schlüssel (ID/Name) je feature
+  const keyOf=f=>{
+    const p=f.properties||{};
+    return f.id ?? p.id ?? p.vnb ?? p.VNB ?? p.name ?? p.Name;
+  };
 
+  // farbregel: 1 → grün, sonst rot, nicht vorhanden → grau
+  const styleFn=f=>{
+    const v=farben[keyOf(f)];
+    return {
+      color:'#000', weight:1,
+      fillOpacity:.35,
+      fillColor: (v===undefined)?'#cccccc' : (String(v)=='1' ? '#2ecc71' : '#e74c3c')
+    };
+  };
+
+  const each=(f,l)=>l.bindTooltip(String(keyOf(f)??'ohne ID'),{sticky:true});
+
+  // CRS automatisch wählen (inkl. XY-swap)
+  const tries=[]; for(const c of CRSs){tries.push({c,swap:false});tries.push({c,swap:true});}
   let chosen=null,layer=null;
   for(const tr of tries){
-    const lyr=layerWithProj(gj,tr.c.def,tr.swap);
-    const b=lyr.getBounds();
-    if(inDE(b)){ chosen=tr; layer=lyr; break; }
+    const lyr=layerWithProj(gj,tr.c.def,tr.swap,styleFn,each);
+    if(inDE(lyr.getBounds())){chosen=tr;layer=lyr;break;}
   }
-  if(!layer){ const tr=tries[0]; chosen=tr; layer=layerWithProj(gj,tr.c.def,tr.swap); }
+  if(!layer){ const tr=tries[0]; chosen=tr; layer=layerWithProj(gj,tr.c.def,tr.swap,styleFn,each); }
 
-  layer.addTo(map); map.fitBounds(layer.getBounds());
-  console.log('CRS:',chosen?.c.name,'swapXY:',chosen?.swap);
+  layer.addTo(map);
+  map.fitBounds(layer.getBounds());
+  console.log('CRS gewählt:',chosen?.c.name,'swapXY:',chosen?.swap);
+}).catch(e=>{
+  console.error('Ladefehler:',e);
+  alert('Fehler beim Laden der Daten. Siehe Konsole.');
 });
 </script>
 </body>
