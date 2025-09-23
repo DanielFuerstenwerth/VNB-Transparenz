@@ -1,28 +1,67 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <title>Debug Polygone</title>
-</head>
-<body>
-  <h2>Debug Polygone.json</h2>
-  <p>Öffne F12 → Console, um die Ausgabe zu sehen.</p>
+<!doctype html><meta charset="utf-8">
+<title>VNB Debug</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>html,body,#map{height:100%;margin:0;background:#f6f6f6}</style>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/topojson-client@3"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+<script>
+const map=L.map('map').setView([51.2,10.4],6);
 
-  <script src="https://unpkg.com/topojson-client@3"></script>
-  <script>
-    fetch("Polygone.json")
-      .then(r => r.json())
-      .then(topoData => {
-        console.log("Keys im TopoJSON:", Object.keys(topoData.objects));
-        if (topoData.objects.data) {
-          const geojson = topojson.feature(topoData, topoData.objects.data);
-          console.log("Anzahl GeoJSON Features:", geojson.features.length);
-          console.log("Beispiel-Feature:", geojson.features[0]);
-        } else {
-          console.error("⚠️ Kein 'data'-Objekt gefunden!");
-        }
-      })
-      .catch(err => console.error("Fehler beim Laden:", err));
-  </script>
-</body>
-</html>
+// >>> WÄHLE GENAU EINE KOMBO (testen in dieser Reihenfolge):
+const CRS = { name:'EPSG:3857', def:'+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +type=crs', swap:true };
+// const CRS = { name:'EPSG:3857', def:'+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +type=crs', swap:false };
+// const CRS = { name:'EPSG:3035', def:'+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs', swap:false };
+// const CRS = { name:'EPSG:3035', def:'+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs', swap:true };
+// const CRS = { name:'EPSG:3034', def:'+proj=lcc +lat_1=35 +lat_2=65 +lat_0=52 +lon_0=10 +x_0=4000000 +y_0=2800000 +ellps=GRS80 +units=m +no_defs +type=crs', swap:false };
+// const CRS = { name:'EPSG:3034', def:'+proj=lcc +lat_1=35 +lat_2=65 +lat_0=52 +lon_0=10 +x_0=4000000 +y_0=2800000 +ellps=GRS80 +units=m +no_defs +type=crs', swap:true };
+
+const keyOf=f=>{
+  const p=f.properties||{};
+  return (f.id??p.id??p.vnb??p.VNB??p.name??p.Name??'').toString().trim();
+};
+
+const layerWithProj=(gj,def,swap,style,each)=>{
+  const src=proj4(def);
+  return L.geoJSON(gj,{
+    coordsToLatLng:(pt)=>{
+      const xy=swap?[pt[1],pt[0]]:[pt[0],pt[1]];
+      const ll=proj4(src,proj4.WGS84,xy);      // [lon,lat]
+      return L.latLng(ll[1],ll[0]);            // Leaflet: (lat,lon)
+    },
+    style,onEachFeature:each
+  });
+};
+
+Promise.all([
+  fetch('Polygone.json').then(r=>r.json()),
+  fetch('farben.json').then(r=>r.json())
+]).then(([topo,farb])=>{
+  const obj=Object.keys(topo.objects)[0];
+  const gj = topojson.feature(topo, topo.objects[obj]);
+
+  let cntG=0,cntR=0,cntX=0, someGreenKeys=[];
+  const styleFn=f=>{
+    const k=keyOf(f); const v=farb[k];
+    if(v===undefined){ cntX++; return {color:'#444',weight:1,fillOpacity:.45,fillColor:'#ccc'}; }
+    if(String(v)=='1'){ cntG++; someGreenKeys.push(k); return {color:'#444',weight:1,fillOpacity:.45,fillColor:'#2ecc71'}; }
+    cntR++; return {color:'#444',weight:1,fillOpacity:.45,fillColor:'#e74c3c'};
+  };
+  const eachFn=(f,l)=>l.bindTooltip(keyOf(f)||'ohne ID',{sticky:true});
+
+  const layer = layerWithProj(gj, CRS.def, CRS.swap, styleFn, eachFn);
+  layer.addTo(map);
+  map.fitBounds(layer.getBounds(),{padding:[8,8]});
+
+  // Debug: zeigen, warum alles rot sein könnte
+  const featKeys=[...new Set(layer.toGeoJSON().features.slice(0,50).map(keyOf))];
+  const hits    = featKeys.filter(k=>farb[k]!==undefined);
+  const greens  = featKeys.filter(k=>String(farb[k])==='1');
+  console.log('CRS',CRS.name,'swapXY',CRS.swap);
+  console.log('Feature-Keys (Beispiel):',featKeys);
+  console.log('Treffer farben.json (Beispiel):',hits);
+  console.log('Greens (Beispiel):',greens);
+  console.log('Counts -> grün:',cntG,'rot:',cntR,'unbekannt:',cntX);
+}).catch(console.error);
+</script>
