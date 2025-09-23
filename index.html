@@ -2,75 +2,89 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>VNB-Polygone</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-    html, body, #map { height: 100%; margin: 0; }
+    html,body,#map{height:100%;margin:0;background:#f6f6f6}
+    .leaflet-container{background:#f6f6f6}
   </style>
 </head>
 <body>
-  <!-- WICHTIG: Map-Container -->
-  <div id="map"></div>
+<div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/topojson-client@3"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/topojson-client@3"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+<script>
+// keine Basemap
+const map = L.map('map', { zoomSnap: .25 }).setView([51.2,10.4], 6);
 
-  <script>
-  // erst starten, wenn DOM da ist
-  window.addEventListener('DOMContentLoaded', async () => {
-    const map = L.map('map').setView([51.2, 10.4], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap', maxZoom: 19
-    }).addTo(map);
+// Kandidaten-CRS (Meter -> WGS84). Wir wählen den besten zu (10,51).
+const CRSs=[
+  {name:'EPSG:3857',def:'+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +type=crs'},
+  {name:'EPSG:3035',def:'+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs'},
+  {name:'EPSG:3034',def:'+proj=lcc +lat_1=35 +lat_2=65 +lat_0=52 +lon_0=10 +x_0=4000000 +y_0=2800000 +ellps=GRS80 +units=m +no_defs +type=crs'}
+];
+const target=[10,51]; // lon,lat
 
-    // Festes Eingabe-CRS (ggf. swapXY umschalten)
-    const CRS_SELECTED = {
-      name: 'EPSG:3035',
-      def:  '+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs +type=crs',
-      swapXY: true     // falls DE falsch liegt: auf false setzen und neu laden
-    };
+const keyOf=f=>{
+  const p=f.properties||{};
+  return (f.id??p.id??p.vnb??p.VNB??p.name??p.Name??'').toString().trim();
+};
 
-    const keyOf = (f) => {
-      const p = f.properties || {};
-      return f.id ?? p.id ?? p.vnb ?? p.VNB ?? p.name ?? p.Name;
-    };
-
-    const layerWithProj = (gj, def, swapXY, styleFn, eachFn) => {
-      const src = proj4(def);
-      return L.geoJSON(gj, {
-        coordsToLatLng: (pt) => {
-          const xy = swapXY ? [pt[1], pt[0]] : [pt[0], pt[1]];
-          const ll = proj4(src, proj4.WGS84, xy);   // [lon, lat]
-          return L.latLng(ll[1], ll[0]);
-        },
-        style: styleFn,
-        onEachFeature: eachFn
-      });
-    };
-
-    // Daten laden
-    const topo = await fetch('Polygone.json').then(r => r.json());
-    const farben = await fetch('farben.json').then(r => r.json());
-    const objName = Object.keys(topo.objects)[0];
-    const gj = topojson.feature(topo, topo.objects[objName]);
-
-    // Farben: 1=grün, sonst rot, fehlend=grau
-    const styleFn = (f) => {
-      const v = farben[keyOf(f)];
-      return {
-        color: '#000', weight: 1, fillOpacity: .35,
-        fillColor: v === undefined ? '#cccccc' : (String(v) === '1' ? '#2ecc71' : '#e74c3c')
-      };
-    };
-    const eachFn = (f, l) => l.bindTooltip(String(keyOf(f) ?? 'ohne ID'), { sticky: true });
-
-    const layer = layerWithProj(gj, CRS_SELECTED.def, CRS_SELECTED.swapXY, styleFn, eachFn);
-    layer.addTo(map);
-    map.fitBounds(layer.getBounds());
-    console.log('CRS fest:', CRS_SELECTED.name, 'swapXY:', CRS_SELECTED.swapXY);
+const layerWithProj=(gj,def,swap,style,each)=>{
+  const src=proj4(def);
+  return L.geoJSON(gj,{
+    coordsToLatLng:pt=>{
+      const xy=swap?[pt[1],pt[0]]:[pt[0],pt[1]];
+      const ll=proj4(src,proj4.WGS84,xy); // [lon,lat]
+      return L.latLng(ll[1],ll[0]);
+    },
+    style,onEachFeature:each
   });
-  </script>
+};
+
+Promise.all([
+  fetch('Polygone.json').then(r=>r.json()),
+  fetch('farben.json').then(r=>r.json())
+]).then(([topo,farben])=>{
+  const obj=Object.keys(topo.objects)[0];
+  const gj=topojson.feature(topo, topo.objects[obj]);
+
+  // Style aus farben.json
+  let cntG=0,cntR=0,cntX=0;
+  const styleFn=f=>{
+    const v=farben[keyOf(f)];
+    let fill='#ccc';
+    if(v===undefined){ cntX++; }
+    else if(String(v)=='1'){ fill='#2ecc71'; cntG++; }
+    else { fill='#e74c3c'; cntR++; }
+    return {color:'#555',weight:1,fillOpacity:.45,fillColor:fill};
+  };
+  const eachFn=(f,l)=>l.bindTooltip(keyOf(f)||'ohne ID',{sticky:true});
+
+  // beste Projektion wählen: min Distanz zum Deutschland-Zentrum + ausreichend Größe
+  let best=null, bestScore=1e9, bestLayer=null;
+  for(const c of CRSs){
+    for(const swap of [false,true]){
+      const lyr=layerWithProj(gj,c.def,swap,styleFn,eachFn);
+      const b=lyr.getBounds(); if(!b.isValid()) continue;
+      const [w,s,e,n]=b.toBBoxString().split(',').map(Number);
+      const cx=(w+e)/2, cy=(s+n)/2;
+      const width=e-w, height=n-s;
+      const score=(cx-target[0])**2 + (cy-target[1])**2;
+      if(width>4 && height>4 && score<bestScore){ bestScore=score; best={c,swap}; bestLayer=lyr; }
+    }
+  }
+  // fallback
+  if(!bestLayer){ const c=CRSs[1]; best={c,swap:true}; bestLayer=layerWithProj(gj,c.def,true,styleFn,eachFn); }
+
+  bestLayer.addTo(map);
+  map.fitBounds(bestLayer.getBounds(),{padding:[10,10]});
+  console.log('CRS:',best.c.name,'swapXY:',best.swap);
+  console.log('farben.json -> grün:',cntG,'rot:',cntR,'unbekannt:',cntX);
+}).catch(e=>{console.error(e); alert('Ladefehler.');});
+</script>
 </body>
 </html>
