@@ -1,21 +1,32 @@
 name: reproject-to-wgs84
-on: [push, workflow_dispatch]
+on:
+  push:
+    paths:
+      - Polygone.json
+      - .github/workflows/reproject.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
-  reproj:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - run: npm i -g mapshaper
-      - run: |
-          mapshaper -i Polygone.json \
-            -proj wgs84 \
-            -o format=topojson id-field=id precision=0.000001 Polygone_wgs84.json
-      - name: Commit
+      - name: Reproject
+        run: mapshaper -i Polygone.json -proj wgs84 \
+             -o format=topojson id-field=id precision=0.000001 Polygone_wgs84.json
+      - name: Commit result
         run: |
+          if git diff --quiet -- Polygone_wgs84.json; then
+            echo "no changes"; exit 0; fi
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add Polygone_wgs84.json
-          git commit -m "reproject to WGS84" || echo "no changes"
+          git commit -m "reproject to WGS84"
           git push
